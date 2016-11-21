@@ -49,26 +49,24 @@ def dtanh(tensor):
     return 1.0 - tf.square(tf.tanh(tensor))
 
 def norm_flow(z, lambd, K, Z):
-    zs = [z]
     us, ws, bs = lambd
 
     log_detjs = []
     for k in range(K):
         u, w, b = us[:, k*Z:(k+1)*Z], ws[:, k*Z:(k+1)*Z], bs[:, k]
-        temp = tf.expand_dims(tf.nn.tanh(tf.reduce_sum(w*zs[k], 1) + b), 1)
+        temp = tf.expand_dims(tf.nn.tanh(tf.reduce_sum(w*z, 1) + b), 1)
         temp = tf.tile(temp, [1, u.get_shape()[1].value])
-        z_k = zs[k] + tf.mul(u, temp)
-        zs.append(z_k)
+        z = z + tf.mul(u, temp)
 
         # Eqn. (11) and (12)
-        temp = tf.expand_dims(dtanh(tf.reduce_sum(w*z_k, 1) + b), 1)
+        temp = tf.expand_dims(dtanh(tf.reduce_sum(w*z, 1) + b), 1)
         temp = tf.tile(temp, [1, w.get_shape()[1].value])
         log_detj = tf.abs(1. + tf.reduce_sum(tf.mul(u, temp*w), 1))
         log_detjs.append(log_detj)
 
     log_detj = tf.reduce_sum(log_detjs)
 
-    return zs[-1], log_detj
+    return z, log_detj
 
 
 def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
@@ -123,7 +121,7 @@ if __name__ == '__main__':
     dec_h = 128
     max_iters = 10000
     batch_size = 100
-    learning_rate = 0.001
+    learning_rate = 0.0005
     k = 5
 
     x, e = inputs(data_dim, enc_z)
@@ -146,7 +144,7 @@ if __name__ == '__main__':
         x_, y_ = data.train.next_batch(batch_size)
         l = train_step(sess, x_, train_op, loss_op, x, e, enc_z)
         if i % 1000 == 0:
-            print('iter: %d\tloss: %.2f' % (i, l))
+            print('iter: %d\tavg. loss: %.2f' % (i, l/batch_size))
             recons.append(reconstruct(sess, x_test, out_op, x, e, enc_z)[0])
 
     for r in recons:
