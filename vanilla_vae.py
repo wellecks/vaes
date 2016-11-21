@@ -39,15 +39,17 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         b_v = tf.get_variable('b_v', [1], initializer=initializer())
 
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
-        mu = tf.matmul(h, w_mu) + b_mu
+        out_mu = tf.matmul(h, w_mu) + b_mu
         out_log_var = tf.matmul(h, w_v) + b_v
         # NOTE(wellecks) Enforce 0, 1 (MNIST-specific)
-        out = tf.sigmoid(mu)
-    return out, out_log_var
+        out = tf.sigmoid(out_mu)
+    return out, out_mu, out_log_var
 
 def make_loss(pred, actual, log_var, mu, out_log_var):
     kl = 0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1)
-    rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
+    # NOTE(wellecks) `sigmoid_cross_entropy_with_logits` performs better than this explicit loss.
+    # rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
+    rec_err = tf.reduce_sum(-tf.nn.sigmoid_cross_entropy_with_logits(pred, actual), 1)
     loss = -tf.reduce_mean(kl + rec_err)
     return loss
 
@@ -80,12 +82,12 @@ if __name__ == '__main__':
     dec_h = 128
     max_iters = 20000
     batch_size = 100
-    learning_rate = 0.01
+    learning_rate = 0.001
 
     x, e = inputs(data_dim, enc_z)
     mu, log_var, z = encoder(x, e, data_dim, enc_h, enc_z)
-    out_op, out_log_var = decoder(z, data_dim, dec_h, enc_z)
-    loss_op = make_loss(out_op, x, log_var, mu, out_log_var)
+    out_op, out_mu, out_log_var = decoder(z, data_dim, dec_h, enc_z)
+    loss_op = make_loss(out_mu, x, log_var, mu, out_log_var)
     train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_op)
 
     sess = tf.InteractiveSession()
