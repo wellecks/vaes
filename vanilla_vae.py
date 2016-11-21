@@ -5,12 +5,13 @@ References
 https://arxiv.org/pdf/1312.6114v10.pdf
 """
 
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
 def inputs(D, Z):
-    x = tf.placeholder(tf.float32, [None, data_dim], 'x')
-    e = tf.placeholder(tf.float32, [None, enc_z], 'e')
+    x = tf.placeholder(tf.float32, [None, D], 'x')
+    e = tf.placeholder(tf.float32, [None, Z], 'e')
     return x, e
 
 def encoder(x, e, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
@@ -37,7 +38,6 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         w_v = tf.get_variable('w_v', [H, 1], initializer=initializer())
         b_v = tf.get_variable('b_v', [1], initializer=initializer())
 
-        # NOTE(wellecks) May need to add `v` weights for decoder?
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         mu = tf.matmul(h, w_mu) + b_mu
         out_log_var = tf.matmul(h, w_v) + b_v
@@ -51,14 +51,14 @@ def make_loss(pred, actual, log_var, mu, out_log_var):
     loss = -tf.reduce_mean(kl + rec_err)
     return loss
 
-def train_step(sess, input_data, train_op, loss_op, Z):
+def train_step(sess, input_data, train_op, loss_op, x_op, e_op, Z):
     e_ = np.random.normal(size=(input_data.shape[0], Z))
-    _, l = sess.run([train_op, loss_op], feed_dict={x: input_data, e: e_})
+    _, l = sess.run([train_op, loss_op], feed_dict={x_op: input_data, e_op: e_})
     return l
 
-def reconstruct(input_data, out_op, Z):
+def reconstruct(sess, input_data, out_op, x_op, e_op, Z):
     e_ = np.random.normal(size=(input_data.shape[0], Z))
-    x_rec = sess.run([out_op], feed_dict={x: input_data, e: e_})
+    x_rec = sess.run([out_op], feed_dict={x_op: input_data, e_op: e_})
     return x_rec
 
 def show_reconstruction(actual, recon):
@@ -71,7 +71,6 @@ def show_reconstruction(actual, recon):
 
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
     from tensorflow.examples.tutorials.mnist import input_data
 
     data = input_data.read_data_sets('data')
@@ -81,12 +80,13 @@ if __name__ == '__main__':
     dec_h = 128
     max_iters = 20000
     batch_size = 100
+    learning_rate = 0.01
 
     x, e = inputs(data_dim, enc_z)
     mu, log_var, z = encoder(x, e, data_dim, enc_h, enc_z)
     out_op, out_log_var = decoder(z, data_dim, dec_h, enc_z)
     loss_op = make_loss(out_op, x, log_var, mu, out_log_var)
-    train_op = tf.train.AdamOptimizer(0.01).minimize(loss_op)
+    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_op)
 
     sess = tf.InteractiveSession()
     sess.run(tf.initialize_all_variables())
@@ -95,10 +95,10 @@ if __name__ == '__main__':
 
     for i in xrange(max_iters):
         x_, y_ = data.train.next_batch(batch_size)
-        l = train_step(sess, x_, train_op, loss_op, enc_z)
+        l = train_step(sess, x_, train_op, loss_op, x, e, enc_z)
         if i % 1000 == 0:
             print('iter: %d\tloss: %.2f' % (i, l))
-            recons.append(reconstruct(x_test, out_op, enc_z)[0])
+            recons.append(reconstruct(sess, x_test, out_op, x, e, enc_z)[0])
 
     for r in recons:
         show_reconstruction(x_test[0], r)
