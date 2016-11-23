@@ -47,9 +47,8 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
 
 def make_loss(pred, actual, log_var, mu, out_log_var):
     kl = 0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1)
-    # NOTE(wellecks) `sigmoid_cross_entropy_with_logits` performs better than this explicit loss.
-    # rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
-    rec_err = tf.reduce_sum(-tf.nn.sigmoid_cross_entropy_with_logits(pred, actual), 1)
+    rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
+    # rec_err = tf.reduce_sum(-tf.nn.sigmoid_cross_entropy_with_logits(pred, actual), 1)
     loss = -tf.reduce_mean(kl + rec_err)
     return loss
 

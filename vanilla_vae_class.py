@@ -56,7 +56,7 @@ class VAE(object):
 
     def make_loss(self, pred, actual, log_var, mu, out_log_var):
         kl = 0.5 * tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1)
-        rec_err = tf.reduce_sum(-tf.nn.sigmoid_cross_entropy_with_logits(pred, actual), 1)
+        rec_err = -0.5 * (tf.nn.l2_loss(actual - pred))
         loss = -tf.reduce_mean(kl + rec_err)
         return loss
 
