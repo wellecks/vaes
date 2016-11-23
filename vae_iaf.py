@@ -48,6 +48,7 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
 
 def made(input_data, Z, H, name, act_fn):
     with tf.variable_scope('made'):
+        # Follows equations (6) and (7) of [Germain 2015]
         W, b, V, c = _init_made_params(Z, H, name)
         M_W, M_V = _create_made_masks(Z, H, name)
         h = tf.nn.relu(b + tf.matmul(input_data, W*M_W))
@@ -64,6 +65,7 @@ def _init_made_params(D, K, name, initializer=tf.contrib.layers.xavier_initializ
 
 def _create_made_masks(D, K, name):
     with tf.variable_scope('%s' % name):
+        # See equations (8) and (9) of [Germain 2015]
         msh = np.random.randint(1, D, size=K)
         M_W_ = (msh[:, np.newaxis] >= (np.tile(range(0, D), [K, 1])+1)).astype(np.float).T
         M_V_ = ((np.tile(np.arange(0, D)[:, np.newaxis], [1, K])+1) > msh[np.newaxis, :]).astype(np.float).T
@@ -75,7 +77,7 @@ def inverse_autoregressive_flow(z, Z, H):
     made_mu = made(z, Z, H, 'made_mu', tf.nn.sigmoid)
     made_sd = made(z, Z, H, 'made_sd', tf.nn.sigmoid)
 
-    # IAF transformation and log det of Jacobian
+    # IAF transformation and log det of Jacobian; eqns (9) and (10) of [Kingma 2016]
     z = (z - made_mu) / made_sd
     log_detj = -tf.reduce_sum(tf.log(made_sd), 1)
     return z, log_detj
