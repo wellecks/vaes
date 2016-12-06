@@ -9,6 +9,7 @@ https://arxiv.org/pdf/1502.03509v2.pdf
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+from utils import *
 
 def inputs(D, Z):
     x = tf.placeholder(tf.float32, [None, D], 'x')
@@ -18,11 +19,11 @@ def inputs(D, Z):
 def encoder(x, e, D, H, Z, K, initializer=tf.contrib.layers.xavier_initializer):
     with tf.variable_scope('encoder'):
         w_h = tf.get_variable('w_h', [D, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
+        b_h = tf.get_variable('b_h', [H])
         w_mu = tf.get_variable('w_mu', [H, Z], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [Z], initializer=initializer())
+        b_mu = tf.get_variable('b_mu', [Z])
         w_v = tf.get_variable('w_v', [H, Z], initializer=initializer())
-        b_v = tf.get_variable('b_v', [Z], initializer=initializer())
+        b_v = tf.get_variable('b_v', [Z])
 
         h = tf.nn.tanh(tf.matmul(x, w_h) + b_h)
         mu = tf.matmul(h, w_mu) + b_mu
@@ -33,11 +34,11 @@ def encoder(x, e, D, H, Z, K, initializer=tf.contrib.layers.xavier_initializer):
 def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
     with tf.variable_scope('decoder'):
         w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
+        b_h = tf.get_variable('b_h', [H])
         w_mu = tf.get_variable('w_mu', [H, D], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [D], initializer=initializer())
+        b_mu = tf.get_variable('b_mu', [D])
         w_v = tf.get_variable('w_v', [H, 1], initializer=initializer())
-        b_v = tf.get_variable('b_v', [1], initializer=initializer())
+        b_v = tf.get_variable('b_v', [1])
 
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         out_mu = tf.matmul(h, w_mu) + b_mu
@@ -58,9 +59,9 @@ def made(input_data, Z, H, name, act_fn):
 def _init_made_params(D, K, name, initializer=tf.contrib.layers.xavier_initializer):
     with tf.variable_scope('%s' % name):
         W = tf.get_variable('W', [D, K], initializer=initializer())
-        b = tf.get_variable('b', [K], initializer=initializer())
+        b = tf.get_variable('b', [K])
         V = tf.get_variable('V', [K, D], initializer=initializer())
-        c = tf.get_variable('c', [D], initializer=initializer())
+        c = tf.get_variable('c', [D])
     return W, b, V, c
 
 def _create_made_masks(D, K, name):
@@ -85,7 +86,8 @@ def inverse_autoregressive_flow(z, Z, H):
 def make_loss(pred, actual, log_var, mu, log_det_j, z0, sigma=1.0):
     q0 = tf.contrib.distributions.Normal(mu=mu, sigma=tf.exp(tf.maximum(1e-5, log_var))).pdf(z0)
     ln_q0 = tf.reduce_sum(tf.log(q0), 1)
-    rec_err = -0.5*(tf.nn.l2_loss(actual - pred)) / sigma
+    rec_err = tf.reduce_mean(crossentropy(pred, actual))
+
     loss = -tf.reduce_mean(ln_q0 + rec_err - log_detj)
     return loss
 
