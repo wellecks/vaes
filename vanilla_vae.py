@@ -8,105 +8,146 @@ https://arxiv.org/pdf/1312.6114v10.pdf
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+import time
+import datetime
+import inspect
+import os
+from tensorflow.examples.tutorials.mnist import input_data
+from models import *
+from reconstructions import *
 
-def inputs(D, Z):
-    x = tf.placeholder(tf.float32, [None, D], 'x')
-    e = tf.placeholder(tf.float32, [None, Z], 'e')
-    return x, e
+def elbo_loss(pred, actual, var_reg=1, **kwargs):
+    mu = kwargs['mu']
+    log_std = kwargs['log_std']
+    if 'sum_log_detj' not in kwargs:
+        kl = -tf.reduce_mean(0.5*tf.reduce_sum(1.0 + 2 * log_std - tf.square(mu) - tf.exp(2 * log_std), 1))
+        #rec_err = tf.reduce_mean(0.5*(tf.nn.l2_loss(actual - pred)/var_reg))
+        #rec_err = -tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
+                    #mu=pred, diag_stdev=tf.ones_like(pred)).log_pdf(actual))
+        rec_err = tf.reduce_mean(crossentropy(pred, actual))
+        loss = kl + rec_err
+        tf.scalar_summary('KL divergence', kl)
+    else:
+        #kl = -tf.reduce_mean(0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1))
+        sum_log_detj, z0, zk  = kwargs['sum_log_detj'], kwargs['z0'], kwargs['zk']
+        sum_log_detj = tf.reduce_mean(sum_log_detj)
+        log_q0_z0 = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
+                    mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z0))
+        log_qk_zk = log_q0_z0 - sum_log_detj
+        log_p_zk = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
+                    mu=tf.zeros_like(mu), diag_stdev=tf.ones_like(mu)).log_pdf(zk))
+        #log_p_x_given_zk = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
+        #            mu=pred, diag_stdev=tf.ones_like(pred)).log_pdf(actual))
+        log_p_x_given_zk = -tf.reduce_mean(crossentropy(pred, actual))
+        rec_err = log_p_x_given_zk
+        #loss = tf.reduce_mean(kl + rec_err - log_detj)
+        loss = log_qk_zk - log_p_zk  - log_p_x_given_zk
+        tf.scalar_summary('Sum of log det Jacobians', sum_log_detj)
+        tf.scalar_summary('Log q0(z0)', log_q0_z0)
+        tf.scalar_summary('Log qk(zk)', log_qk_zk)
+        tf.scalar_summary('Log p(zk)', log_p_zk)
+        tf.scalar_summary('Log p(x|zk)', log_p_x_given_zk)
 
-def encoder(x, e, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
-    with tf.variable_scope('encoder'):
-        w_h = tf.get_variable('w_h', [D, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
-        w_mu = tf.get_variable('w_mu', [H, Z], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [Z], initializer=initializer())
-        w_v = tf.get_variable('w_v', [H, Z], initializer=initializer())
-        b_v = tf.get_variable('b_v', [Z], initializer=initializer())
+    tf.scalar_summary('ELBO', loss)
 
-        h = tf.nn.tanh(tf.matmul(x, w_h) + b_h)
-        mu = tf.matmul(h, w_mu) + b_mu
-        log_var = tf.matmul(h, w_v) + b_v
-        z = mu + tf.sqrt(tf.exp(log_var))*e
-    return mu, log_var, z
-
-def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn=tf.sigmoid):
-    with tf.variable_scope('decoder'):
-        w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
-        w_mu = tf.get_variable('w_mu', [H, D], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [D], initializer=initializer())
-        w_v = tf.get_variable('w_v', [H, 1], initializer=initializer())
-        b_v = tf.get_variable('b_v', [1], initializer=initializer())
-
-        h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
-        out_mu = tf.matmul(h, w_mu) + b_mu
-        out_log_var = tf.matmul(h, w_v) + b_v
-        out = out_fn(out_mu)
-    return out, out_mu, out_log_var
-
-def make_loss(pred, actual, log_var, mu, out_log_var):
-    kl = 0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1)
-    rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
-    loss = -tf.reduce_mean(kl + rec_err)
+    tf.scalar_summary('Reconstruction error', rec_err)
     return loss
 
-def train_step(sess, input_data, train_op, loss_op, x_op, e_op, Z):
-    e_ = np.random.normal(size=(input_data.shape[0], Z))
-    _, l = sess.run([train_op, loss_op], feed_dict={x_op: input_data, e_op: e_})
-    return l
+def train(
+        data=input_data.read_data_sets('data'),
+        image_width=28,
+        dim_x=784,
+        dim_z=128,
 
-def reconstruct(sess, input_data, out_op, x_op, e_op, Z):
-    e_ = np.random.normal(size=(input_data.shape[0], Z))
-    x_rec = sess.run([out_op], feed_dict={x_op: input_data, e_op: e_})
-    return x_rec
+        enc_dims=[128],
+        dec_dims=[128],
+        encoder=basic_encoder,
+        decoder=basic_decoder,
 
-def show_reconstruction(actual, recon):
-    fig, axs = plt.subplots(1, 2)
-    axs[0].imshow(actual.reshape(28, 28), cmap='gray')
-    axs[1].imshow(recon.reshape(28, 28), cmap='gray')
-    axs[0].set_title('actual')
-    axs[1].set_title('reconstructed')
-    plt.show()
+        learning_rate=0.0001,
+        optimizer=tf.train.AdamOptimizer,
+        loss=elbo_loss,
+        batch_size=100,
 
+        results_dir='results',
+        max_steps=20000,
 
-def sample_latent(sess, input_data, z_op, x_op, e_op, Z):
-    e_ = np.random.normal(size=(input_data.shape[0], z))
-    zs = sess.run(z, feed_dict={x_op: input_data, e_op: e_})
-    return zs
+        **kwargs
+        ):
+    global_step = tf.Variable(0, trainable=False) # for checkpoint saving
+    dt = datetime.datetime.now()
+    results_dir += '/{:02d}-{:02d}-{:02d}_{}'.format(dt.hour, dt.minute, dt.second, dt.date())
+    os.mkdir(results_dir)
+    # Get all the settings and save them.
+    with open(results_dir + '/settings.txt', 'w') as f:
+        args = inspect.getargspec(train).args
+        settings = [locals()[arg] for arg in args]
+        for s, arg in zip(settings, args):
+            f.write('{}: {}\n'.format(arg, s))
 
-if __name__ == '__main__':
-    from tensorflow.examples.tutorials.mnist import input_data
+    # Build computation graph and operations
+    x = tf.placeholder(tf.float32, [None, dim_x], 'x')
+    e = tf.random_normal(shape=(batch_size, dim_z))
+    z_params, z = encoder(x, e, dim_x, enc_dims, dim_z)
+    #z_params, z = encoder(x, e, dim_z, width=image_width, **kwargs) #CONVNET
+    x_pred = decoder(z, dim_x, dec_dims, dim_z)
+    loss_op = loss(x_pred, x, **z_params)
+    #out_op = tf.sigmoid(x_pred)
+    out_op = x_pred
+    train_op = optimizer(learning_rate).minimize(loss_op, global_step=global_step)
 
-    data = input_data.read_data_sets('data')
-    data_dim = data.train.images.shape[1]
-    enc_h = 128
-    enc_z = 64
-    dec_h = 128
-    max_iters = 5000
-    batch_size = 100
-    learning_rate = 0.001
+    # Make summaries
+    rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)
+    summary_op = tf.merge_all_summaries()
 
-    x, e = inputs(data_dim, enc_z)
-    mu, log_var, z = encoder(x, e, data_dim, enc_h, enc_z)
-    out_op, out_mu, out_log_var = decoder(z, data_dim, dec_h, enc_z)
-    loss_op = make_loss(out_op, x, log_var, mu, out_log_var)
-    train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_op)
+    # Create a saver.
+    saver = tf.train.Saver(tf.all_variables())
 
+    # Create a session
     sess = tf.InteractiveSession()
     sess.run(tf.initialize_all_variables())
+    summary_writer = tf.train.SummaryWriter(results_dir, sess.graph)
     x_test, _ = data.test.next_batch(1)
     recons = []
 
-    S = 200
-    p_v_op = marginal_likelihood(x, z, mu, log_var, out_mu, out_log_var, enc_z)
-    for i in xrange(max_iters):
+    for step in xrange(max_steps):
+        start_time = time.time()
         x_, y_ = data.train.next_batch(batch_size)
-        l = train_step(sess, x_, train_op, loss_op, x, e, enc_z)
-        if i % 1000 == 0:
-            print('iter: %d\tloss: %.2f' % (i, l))
-            recons.append(reconstruct(sess, x_test, out_op, x, e, enc_z)[0])
+        feed_dict={x: x_}
+        _, l = sess.run([train_op, loss_op], feed_dict)
+
+        duration = time.time() - start_time
+
+        if step % 100 == 0:
+            summary_str = sess.run(summary_op, feed_dict=feed_dict)
+            summary_writer.add_summary(summary_str, step)
+
+        if step % 1000 == 0:
+            print('iter: {:d}\tloss: {:.2f} ({:.1f} examples/sec)'.format(step, l, batch_size/duration))
+            recons.append([[reconstruct(sess, x_test, out_op, x)[0][0], step]])
+
+        # Save the model checkpoint periodically.
+        if step % 1000 == 0 or (step + 1) == max_steps:
+            checkpoint_path = os.path.join(results_dir, 'model.ckpt')
+            saver.save(sess, checkpoint_path, global_step=step)
 
     for r in recons:
-        show_reconstruction(x_test[0], r)
+        show_reconstruction(x_test[0], r, image_width)
 
     sess.close()
+
+if __name__ == '__main__':
+    layer_dict = {
+    'strides': [1, 1],
+    'filter_sizes': [5, 5],
+    'hidden_channels': [32, 1]
+    }
+    in_shape = (28, 28, 1)
+    train(
+    enc_dims=[128],
+    dec_dims=[32],#
+    #encoder=nf_encoder(1),
+    encoder=iaf_encoder(1),
+    max_steps=20000
+    #encoder=conv_encoder(layer_dict, in_shape),
+        )

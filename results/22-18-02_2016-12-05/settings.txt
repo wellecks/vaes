@@ -1,0 +1,14 @@
+data: Datasets(train=<tensorflow.contrib.learn.python.learn.datasets.mnist.DataSet object at 0x11d9a5290>, validation=<tensorflow.contrib.learn.python.learn.datasets.mnist.DataSet object at 0x11d9a5310>, test=<tensorflow.contrib.learn.python.learn.datasets.mnist.DataSet object at 0x11d9a5350>)
+image_width: 28
+dim_x: 784
+dim_z: 128
+enc_dims: [128]
+dec_dims: [32]
+encoder: <function <lambda> at 0x11d9aa410>
+decoder: <function basic_decoder at 0x11d9a9ed8>
+learning_rate: 0.0001
+optimizer: <class 'tensorflow.python.training.adam.AdamOptimizer'>
+loss: <function elbo_loss at 0x11d9aa2a8>
+batch_size: 100
+results_dir: results/22-18-02_2016-12-05
+max_steps: 20000

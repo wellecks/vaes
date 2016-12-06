@@ -17,11 +17,11 @@ def inputs(D, Z):
 def encoder(x, e, D, H, Z, K, initializer=tf.contrib.layers.xavier_initializer):
     with tf.variable_scope('encoder'):
         w_h = tf.get_variable('w_h', [D, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
+        b_h = tf.get_variable('b_h', [H])
         w_mu = tf.get_variable('w_mu', [H, Z], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [Z], initializer=initializer())
+        b_mu = tf.get_variable('b_mu', [Z])
         w_v = tf.get_variable('w_v', [H, Z], initializer=initializer())
-        b_v = tf.get_variable('b_v', [Z], initializer=initializer())
+        b_v = tf.get_variable('b_v', [Z])
 
         # Weights for outputting normalizing flow parameters
         w_us = tf.get_variable('w_us', [H, K*Z])
@@ -64,7 +64,9 @@ def norm_flow(z, lambd, K, Z):
         log_detj = tf.abs(1. + tf.reduce_sum(tf.mul(u, temp*w), 1))
         log_detjs.append(log_detj)
 
-    log_detj = tf.reduce_sum(log_detjs)
+    if K != 0:
+        log_detj = tf.reduce_sum(log_detjs)
+    else: log_detj = 0
 
     return z, log_detj
 
@@ -72,11 +74,11 @@ def norm_flow(z, lambd, K, Z):
 def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn=tf.sigmoid):
     with tf.variable_scope('decoder'):
         w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
-        b_h = tf.get_variable('b_h', [H], initializer=initializer())
+        b_h = tf.get_variable('b_h', [H])
         w_mu = tf.get_variable('w_mu', [H, D], initializer=initializer())
-        b_mu = tf.get_variable('b_mu', [D], initializer=initializer())
+        b_mu = tf.get_variable('b_mu', [D])
         w_v = tf.get_variable('w_v', [H, 1], initializer=initializer())
-        b_v = tf.get_variable('b_v', [1], initializer=initializer())
+        b_v = tf.get_variable('b_v', [1])
 
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         out_mu = tf.matmul(h, w_mu) + b_mu
@@ -85,10 +87,12 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn
     return out, out_mu, out_log_var
 
 def make_loss(pred, actual, log_var, mu, log_detj, z0, sigma=1.0):
-    q0 = tf.contrib.distributions.Normal(mu=mu, sigma=tf.exp(tf.maximum(1e-5, log_var))).pdf(z0)
-    ln_q0 = tf.reduce_sum(tf.log(q0), 1)
-    rec_err = -0.5*(tf.nn.l2_loss(actual - pred)) / sigma
-    loss = -tf.reduce_mean(ln_q0 + rec_err - log_detj)
+    #q0 = tf.contrib.distributions.Normal(mu=mu, sigma=tf.exp(log_var)).pdf(z0)
+    #ln_q0 = tf.reduce_sum(tf.log(q0), 1)
+    kl = -tf.reduce_mean(0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1))
+    rec_err = 0.5*(tf.nn.l2_loss(actual - pred)) / sigma
+    #loss = tf.reduce_mean(ln_q0 + rec_err - log_detj)
+    loss = tf.reduce_mean(kl + rec_err - log_detj)
     return loss
 
 def train_step(sess, input_data, train_op, loss_op, x_op, e_op, Z):
@@ -119,9 +123,9 @@ if __name__ == '__main__':
     enc_z = 64
     dec_h = 128
     max_iters = 10000
-    batch_size = 100
-    learning_rate = 0.0005
-    k = 5
+    batch_size = 128
+    learning_rate = 0.001
+    k = 0
 
     x, e = inputs(data_dim, enc_z)
     mu, log_var, z0, lambd = encoder(x, e, data_dim, enc_h, enc_z, k)

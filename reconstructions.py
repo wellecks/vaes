@@ -1,0 +1,19 @@
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+def reconstruct(sess, input_data, out_op, x):
+    x_rec = sess.run([out_op], feed_dict={x: input_data})
+    return x_rec
+
+def show_reconstruction(actual, recons, image_width):
+    fig, axs = plt.subplots(1, len(recons) + 1)
+    axs[0].set_title('actual')
+    axs[0].imshow(actual.reshape(image_width, image_width), cmap='gray')
+    for i, recon in enumerate(recons):
+        axs[i+1].imshow(recon[0].reshape(image_width, image_width), cmap='gray')
+        axs[i+1].set_title('reconstructed, iteration {}'.format(recon[1]))
+    plt.show()
+
+def vec2im(x, batch_size, image_width):
+    shape = (batch_size, image_width, image_width, 1)
+    return tf.reshape(x, shape) # reshape to 4D
