@@ -1,14 +1,15 @@
-"""Variational Auto-encoder
+"""Trains various VAE models.
 
-References
-----------
-https://arxiv.org/pdf/1312.6114v10.pdf
+E.g. python train.py --basic
+     python train.py --nf --flow 10
 """
 
-import time
+import argparse
 import datetime
 import inspect
 import os
+import time
+
 from tensorflow.examples.tutorials.mnist import input_data
 from models import *
 from reconstructions import *
@@ -90,20 +91,28 @@ def train(
     sess.close()
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--basic', action='store_true')
+    group.add_argument('--nf', action='store_true')
+    group.add_argument('--iaf', action='store_true')
 
-    '''
-    This is where we put the training settings
-    '''
+    parser.add_argument('--flow', type=int, default=2)
+    args = parser.parse_args()
+
+    ### TRAINING SETTINGS
     dim_x, dim_z, enc_dims, dec_dims = 784, 96, [128], [128]
     encoder_net = lambda x: nn(x, enc_dims, name='encoder')
     decoder_net = lambda z: nn(z, dec_dims, name='decoder')
-    flow = 2
+    flow = args.flow
 
     ### ENCODER
-    #encoder = basic_encoder(encoder_net, dim_z)
-    encoder = nf_encoder(encoder_net, dim_z, flow)
-    #encoder = iaf_encoder(encoder_net, dim_z, flow)
-
+    if args.basic:
+        encoder = basic_encoder(encoder_net, dim_z)
+    if args.nf:
+        encoder = nf_encoder(encoder_net, dim_z, flow)
+    if args.iaf:
+        encoder = iaf_encoder(encoder_net, dim_z, flow)
 
     ### DECODER
     decoder = basic_decoder(decoder_net, dim_x)
@@ -112,17 +121,17 @@ if __name__ == '__main__':
     ## TRAINING
     #######################################
     train(
-    image_width=28,
-    dim_x=dim_x,
-    dim_z=dim_z,
-    encoder=encoder,
-    decoder=decoder,
+        image_width=28,
+        dim_x=dim_x,
+        dim_z=dim_z,
+        encoder=encoder,
+        decoder=decoder,
 
-    learning_rate=0.0001,
-    optimizer=tf.train.AdamOptimizer,
-    loss=elbo_loss,
-    batch_size=100,
+        learning_rate=0.0001,
+        optimizer=tf.train.AdamOptimizer,
+        loss=elbo_loss,
+        batch_size=100,
 
-    results_dir='results',
-    max_steps=20000,
-        )
+        results_dir='results',
+        max_steps=20000,
+    )

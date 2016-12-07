@@ -1,8 +1,11 @@
-To run:
+To train:
 ```bash
-python vanilla_vae.py
+python train.py [-h] (--basic | --nf | --iaf) [--flow FLOW]
+
+# E.g.
+python train.py --basic
+python train.py --nf --flow 10
 ```
-or substitute another script name in. Also see the notebook for usage.
 
 This is a massive refactoring of the original VAE code.
 
