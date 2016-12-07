@@ -47,13 +47,9 @@ def train(
     # Build computation graph and operations
     x = tf.placeholder(tf.float32, [None, dim_x], 'x')
     e = tf.random_normal(shape=(batch_size, dim_z))
-    #z_params, z = encoder(x, e, dim_x, enc_dims, dim_z)
     z_params, z = encoder(x, e)
-    #z_params, z = encoder(x, e, dim_z, width=image_width, **kwargs) #CONVNET
-    #x_pred = decoder(z, dim_x, dec_dims, dim_z)
     x_pred = decoder(z)
-    loss_op = loss(x_pred, x, **z_params)
-    #out_op = tf.sigmoid(x_pred)
+    loss_op = loss(x_pred, x, **z_params)]
     out_op = x_pred
     train_op = optimizer(learning_rate).minimize(loss_op, global_step=global_step)
 
