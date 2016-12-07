@@ -21,12 +21,13 @@ def variable_summaries(var):
       tf.scalar_summary('min', tf.reduce_min(var))
       tf.histogram_summary('histogram', var)
 
-def fc_layer(input_tensor, input_dim, output_dim, layer_name, act=tf.nn.relu):
+def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     """Reusable code for making a simple neural net layer.
     It does a matrix multiply, bias add, and then uses tanh to nonlinearize.
     It also sets up name scoping so that the resultant graph is easy to read,
     and adds a number of summary ops.
     """
+    input_dim = input_tensor.get_shape()[-1].value
     # Adding a name scope ensures logical grouping of the layers in the graph.
     with tf.variable_scope(layer_name):
       # This Variable will hold the state of the weights for the layer
@@ -93,14 +94,14 @@ def made_layer(input_tensor, input_dim, output_dim, layer_name, act=tf.nn.relu):
       #tf.histogram_summary('activations', activations)
       return activations
 
-def nn(input_tensor, dim_start, dims_hidden, name, act=tf.nn.relu):
+def nn(input_tensor, dims_hidden, name, act=tf.nn.relu):
     with tf.variable_scope(name):
         dim_out = dims_hidden[0]
-        h = fc_layer(input_tensor, dim_start, dim_out, 'layer0', act)
+        h = fc_layer(input_tensor, dim_out, 'layer0', act)
         for i in range(len(dims_hidden) - 1):
             dim_in = dims_hidden[i]
             dim_out = dims_hidden[i+1]
-            h = fc_layer(h, dim_in, dim_out, 'layer_{}'.format(i+1), act)
+            h = fc_layer(h, dim_out, 'layer_{}'.format(i+1), act)
         dim_in = dims_hidden[-1]
     return h
 
@@ -123,12 +124,3 @@ def cnn(input_tensor, in_shape, layer_dict, output_dims_dict, name, act=tf.nn.ta
             outputs[key] = fc_layer(h, dim_flattened, output_dims_dict[key], layer_name=key, act=None)
         print [outputs[k].get_shape() for k in output_dims_dict]
     return outputs
-
-def crossentropy(obs, actual, offset=1e-7):
-        """Binary cross-entropy, per training example"""
-        # (tf.Tensor, tf.Tensor, float) -> tf.Tensor
-        with tf.name_scope("cross_entropy"):
-            # bound by clipping to avoid nan
-            obs_ = tf.clip_by_value(obs, offset, 1 - offset)
-            return -tf.reduce_sum(actual * tf.log(obs_) +
-                                  (1 - actual) * tf.log(1 - obs_), 1)

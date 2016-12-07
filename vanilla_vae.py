@@ -15,43 +15,7 @@ import os
 from tensorflow.examples.tutorials.mnist import input_data
 from models import *
 from reconstructions import *
-
-def elbo_loss(pred, actual, var_reg=1, **kwargs):
-    mu = kwargs['mu']
-    log_std = kwargs['log_std']
-    if 'sum_log_detj' not in kwargs:
-        kl = -tf.reduce_mean(0.5*tf.reduce_sum(1.0 + 2 * log_std - tf.square(mu) - tf.exp(2 * log_std), 1))
-        #rec_err = tf.reduce_mean(0.5*(tf.nn.l2_loss(actual - pred)/var_reg))
-        #rec_err = -tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
-                    #mu=pred, diag_stdev=tf.ones_like(pred)).log_pdf(actual))
-        rec_err = tf.reduce_mean(crossentropy(pred, actual))
-        loss = kl + rec_err
-        tf.scalar_summary('KL divergence', kl)
-    else:
-        #kl = -tf.reduce_mean(0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1))
-        sum_log_detj, z0, zk  = kwargs['sum_log_detj'], kwargs['z0'], kwargs['zk']
-        sum_log_detj = tf.reduce_mean(sum_log_detj)
-        log_q0_z0 = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
-                    mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z0))
-        log_qk_zk = log_q0_z0 - sum_log_detj
-        log_p_zk = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
-                    mu=tf.zeros_like(mu), diag_stdev=tf.ones_like(mu)).log_pdf(zk))
-        #log_p_x_given_zk = tf.reduce_mean(tf.contrib.distributions.MultivariateNormalDiag(
-        #            mu=pred, diag_stdev=tf.ones_like(pred)).log_pdf(actual))
-        log_p_x_given_zk = -tf.reduce_mean(crossentropy(pred, actual))
-        rec_err = log_p_x_given_zk
-        #loss = tf.reduce_mean(kl + rec_err - log_detj)
-        loss = log_qk_zk - log_p_zk  - log_p_x_given_zk
-        tf.scalar_summary('Sum of log det Jacobians', sum_log_detj)
-        tf.scalar_summary('Log q0(z0)', log_q0_z0)
-        tf.scalar_summary('Log qk(zk)', log_qk_zk)
-        tf.scalar_summary('Log p(zk)', log_p_zk)
-        tf.scalar_summary('Log p(x|zk)', log_p_x_given_zk)
-
-    tf.scalar_summary('ELBO', loss)
-
-    tf.scalar_summary('Reconstruction error', rec_err)
-    return loss
+from loss import *
 
 def train(
         image_width,
@@ -138,19 +102,23 @@ if __name__ == '__main__':
     '''
     This is where we put the training settings
     '''
-
-    ### VANILLA VAE
-    #dim_x, dim_z, enc_dims = 784, 96, [128]
-    #encoder = basic_encoder(dim_x, enc_dims, dim_z)
-
-    ### NORMALIZING FLOW
-    dim_x, dim_z, enc_dims = 784, 96, [128]
+    dim_x, dim_z, enc_dims, dec_dims = 784, 96, [128], [128]
+    encoder_net = lambda x: nn(x, enc_dims, name='encoder')
+    decoder_net = lambda z: nn(z, dec_dims, name='decoder')
     flow = 2
-    encoder = nf_encoder(dim_x, enc_dims, dim_z, flow)
 
-    dec_dims = [128]
-    decoder = basic_decoder(dim_x, dec_dims, dim_z)
+    ### ENCODER
+    #encoder = basic_encoder(encoder_net, dim_z)
+    encoder = nf_encoder(encoder_net, dim_z, flow)
+    #encoder = iaf_encoder(encoder_net, dim_z, flow)
 
+
+    ### DECODER
+    decoder = basic_decoder(decoder_net, dim_x)
+
+    #######################################
+    ## TRAINING
+    #######################################
     train(
     image_width=28,
     dim_x=dim_x,
@@ -165,8 +133,4 @@ if __name__ == '__main__':
 
     results_dir='results',
     max_steps=20000,
-    #encoder=nf_encoder(1),
-
-    #encoder=iaf_encoder(1),
-    #encoder=conv_encoder(layer_dict, in_shape),
         )
