@@ -30,7 +30,7 @@ def encoder(x, e, D, H, Z, K, initializer=tf.contrib.layers.xavier_initializer):
         z = mu + tf.sqrt(tf.exp(log_var))*e
     return mu, log_var, z
 
-def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
+def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn=tf.sigmoid):
     with tf.variable_scope('decoder'):
         w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
         b_h = tf.get_variable('b_h', [H], initializer=initializer())
@@ -42,8 +42,7 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         out_mu = tf.matmul(h, w_mu) + b_mu
         out_log_var = tf.matmul(h, w_v) + b_v
-        # NOTE(wellecks) Enforce 0, 1 (MNIST-specific)
-        out = tf.sigmoid(out_mu)
+        out = out_fn(out_mu)
     return out, out_mu, out_log_var
 
 def made(input_data, Z, H, name, act_fn):
@@ -82,7 +81,7 @@ def inverse_autoregressive_flow(z, Z, H):
     log_detj = -tf.reduce_sum(tf.log(made_sd), 1)
     return z, log_detj
 
-def make_loss(pred, actual, log_var, mu, log_det_j, z0, sigma=1.0):
+def make_loss(pred, actual, log_var, mu, log_detj, z0, sigma=1.0):
     q0 = tf.contrib.distributions.Normal(mu=mu, sigma=tf.exp(tf.maximum(1e-5, log_var))).pdf(z0)
     ln_q0 = tf.reduce_sum(tf.log(q0), 1)
     rec_err = -0.5*(tf.nn.l2_loss(actual - pred)) / sigma
@@ -98,6 +97,12 @@ def reconstruct(sess, input_data, out_op, x_op, e_op, Z):
     e_ = np.random.normal(size=(input_data.shape[0], Z))
     x_rec = sess.run([out_op], feed_dict={x_op: input_data, e_op: e_})
     return x_rec
+
+
+def sample_latent(sess, input_data, z_op, x_op, e_op, Z):
+    e_ = np.random.normal(size=(input_data.shape[0], Z))
+    zs = sess.run(z_op, feed_dict={x_op: input_data, e_op: e_})
+    return zs
 
 def show_reconstruction(actual, recon):
     fig, axs = plt.subplots(1, 2)

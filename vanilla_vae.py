@@ -29,7 +29,7 @@ def encoder(x, e, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         z = mu + tf.sqrt(tf.exp(log_var))*e
     return mu, log_var, z
 
-def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
+def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn=tf.sigmoid):
     with tf.variable_scope('decoder'):
         w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
         b_h = tf.get_variable('b_h', [H], initializer=initializer())
@@ -41,14 +41,12 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         out_mu = tf.matmul(h, w_mu) + b_mu
         out_log_var = tf.matmul(h, w_v) + b_v
-        # NOTE(wellecks) Enforce 0, 1 (MNIST-specific)
-        out = tf.sigmoid(out_mu)
+        out = out_fn(out_mu)
     return out, out_mu, out_log_var
 
 def make_loss(pred, actual, log_var, mu, out_log_var):
     kl = 0.5*tf.reduce_sum(1.0 + log_var - tf.square(mu) - tf.exp(log_var), 1)
     rec_err = -0.5*(tf.nn.l2_loss(actual - pred))
-    # rec_err = tf.reduce_sum(-tf.nn.sigmoid_cross_entropy_with_logits(pred, actual), 1)
     loss = -tf.reduce_mean(kl + rec_err)
     return loss
 
@@ -71,6 +69,11 @@ def show_reconstruction(actual, recon):
     plt.show()
 
 
+def sample_latent(sess, input_data, z_op, x_op, e_op, Z):
+    e_ = np.random.normal(size=(input_data.shape[0], z))
+    zs = sess.run(z, feed_dict={x_op: input_data, e_op: e_})
+    return zs
+
 if __name__ == '__main__':
     from tensorflow.examples.tutorials.mnist import input_data
 
@@ -79,14 +82,14 @@ if __name__ == '__main__':
     enc_h = 128
     enc_z = 64
     dec_h = 128
-    max_iters = 20000
+    max_iters = 5000
     batch_size = 100
     learning_rate = 0.001
 
     x, e = inputs(data_dim, enc_z)
     mu, log_var, z = encoder(x, e, data_dim, enc_h, enc_z)
     out_op, out_mu, out_log_var = decoder(z, data_dim, dec_h, enc_z)
-    loss_op = make_loss(out_mu, x, log_var, mu, out_log_var)
+    loss_op = make_loss(out_op, x, log_var, mu, out_log_var)
     train_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_op)
 
     sess = tf.InteractiveSession()
@@ -94,6 +97,8 @@ if __name__ == '__main__':
     x_test, _ = data.test.next_batch(1)
     recons = []
 
+    S = 200
+    p_v_op = marginal_likelihood(x, z, mu, log_var, out_mu, out_log_var, enc_z)
     for i in xrange(max_iters):
         x_, y_ = data.train.next_batch(batch_size)
         l = train_step(sess, x_, train_op, loss_op, x, e, enc_z)

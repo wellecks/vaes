@@ -69,7 +69,7 @@ def norm_flow(z, lambd, K, Z):
     return z, log_detj
 
 
-def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
+def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer, out_fn=tf.sigmoid):
     with tf.variable_scope('decoder'):
         w_h = tf.get_variable('w_h', [Z, H], initializer=initializer())
         b_h = tf.get_variable('b_h', [H], initializer=initializer())
@@ -81,11 +81,10 @@ def decoder(z, D, H, Z, initializer=tf.contrib.layers.xavier_initializer):
         h = tf.nn.tanh(tf.matmul(z, w_h) + b_h)
         out_mu = tf.matmul(h, w_mu) + b_mu
         out_log_var = tf.matmul(h, w_v) + b_v
-        # NOTE(wellecks) Enforce 0, 1 (MNIST-specific)
-        out = tf.sigmoid(out_mu)
+        out = out_fn(out_mu)
     return out, out_mu, out_log_var
 
-def make_loss(pred, actual, log_var, mu, log_det_j, z0, sigma=1.0):
+def make_loss(pred, actual, log_var, mu, log_detj, z0, sigma=1.0):
     q0 = tf.contrib.distributions.Normal(mu=mu, sigma=tf.exp(tf.maximum(1e-5, log_var))).pdf(z0)
     ln_q0 = tf.reduce_sum(tf.log(q0), 1)
     rec_err = -0.5*(tf.nn.l2_loss(actual - pred)) / sigma
