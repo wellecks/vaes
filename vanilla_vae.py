@@ -49,7 +49,7 @@ def train(
     e = tf.random_normal(shape=(batch_size, dim_z))
     z_params, z = encoder(x, e)
     x_pred = decoder(z)
-    loss_op = loss(x_pred, x, **z_params)]
+    loss_op = loss(x_pred, x, **z_params)
     out_op = x_pred
     train_op = optimizer(learning_rate).minimize(loss_op, global_step=global_step)
 
@@ -98,14 +98,24 @@ if __name__ == '__main__':
     '''
     This is where we put the training settings
     '''
-    dim_x, dim_z, enc_dims, dec_dims = 784, 96, [128], [128]
-    encoder_net = lambda x: nn(x, enc_dims, name='encoder')
+
+    layer_dict = {
+        'wc1': [5, 5, 1, 32],
+        'wc2': [5, 5, 32, 64],
+        'wd1': [7*7*64, 128],
+        'out': [128, 96]
+    }
+
+    ##############
+    dim_x, dim_z, enc_dims, dec_dims = 784, 96, [128], [127]
+    #encoder_net = lambda x: nn(x, enc_dims, name='encoder')
+    encoder_net = lambda x: conv_net(x, layer_dict)
     decoder_net = lambda z: nn(z, dec_dims, name='decoder')
-    flow = 2
+    flow = 1
 
     ### ENCODER
-    #encoder = basic_encoder(encoder_net, dim_z)
-    encoder = nf_encoder(encoder_net, dim_z, flow)
+    encoder = basic_encoder(encoder_net, dim_z)
+    #encoder = nf_encoder(encoder_net, dim_z, flow)
     #encoder = iaf_encoder(encoder_net, dim_z, flow)
 
 
