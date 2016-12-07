@@ -5,9 +5,6 @@ References
 https://arxiv.org/pdf/1312.6114v10.pdf
 """
 
-import matplotlib.pyplot as plt
-import numpy as np
-import tensorflow as tf
 import time
 import datetime
 import inspect
@@ -30,7 +27,6 @@ def train(
         results_dir='results',
         max_steps=20000,
         data=input_data.read_data_sets('data'),
-
         **kwargs
         ):
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
@@ -49,7 +45,7 @@ def train(
     e = tf.random_normal(shape=(batch_size, dim_z))
     z_params, z = encoder(x, e)
     x_pred = decoder(z)
-    loss_op = loss(x_pred, x, **z_params)]
+    loss_op = loss(x_pred, x, **z_params)
     out_op = x_pred
     train_op = optimizer(learning_rate).minimize(loss_op, global_step=global_step)
 
