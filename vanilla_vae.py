@@ -54,23 +54,18 @@ def elbo_loss(pred, actual, var_reg=1, **kwargs):
     return loss
 
 def train(
-        data=input_data.read_data_sets('data'),
-        image_width=28,
-        dim_x=784,
-        dim_z=128,
-
-        enc_dims=[128],
-        dec_dims=[128],
-        encoder=basic_encoder,
-        decoder=basic_decoder,
-
+        image_width,
+        dim_x,
+        dim_z,
+        encoder,
+        decoder,
         learning_rate=0.0001,
         optimizer=tf.train.AdamOptimizer,
         loss=elbo_loss,
         batch_size=100,
-
         results_dir='results',
         max_steps=20000,
+        data=input_data.read_data_sets('data'),
 
         **kwargs
         ):
@@ -88,9 +83,11 @@ def train(
     # Build computation graph and operations
     x = tf.placeholder(tf.float32, [None, dim_x], 'x')
     e = tf.random_normal(shape=(batch_size, dim_z))
-    z_params, z = encoder(x, e, dim_x, enc_dims, dim_z)
+    #z_params, z = encoder(x, e, dim_x, enc_dims, dim_z)
+    z_params, z = encoder(x, e)
     #z_params, z = encoder(x, e, dim_z, width=image_width, **kwargs) #CONVNET
-    x_pred = decoder(z, dim_x, dec_dims, dim_z)
+    #x_pred = decoder(z, dim_x, dec_dims, dim_z)
+    x_pred = decoder(z)
     loss_op = loss(x_pred, x, **z_params)
     #out_op = tf.sigmoid(x_pred)
     out_op = x_pred
@@ -137,17 +134,39 @@ def train(
     sess.close()
 
 if __name__ == '__main__':
-    layer_dict = {
-    'strides': [1, 1],
-    'filter_sizes': [5, 5],
-    'hidden_channels': [32, 1]
-    }
-    in_shape = (28, 28, 1)
+
+    '''
+    This is where we put the training settings
+    '''
+
+    ### VANILLA VAE
+    #dim_x, dim_z, enc_dims = 784, 96, [128]
+    #encoder = basic_encoder(dim_x, enc_dims, dim_z)
+
+    ### NORMALIZING FLOW
+    dim_x, dim_z, enc_dims = 784, 96, [128]
+    flow = 2
+    encoder = nf_encoder(dim_x, enc_dims, dim_z, flow)
+
+    dec_dims = [128]
+    decoder = basic_decoder(dim_x, dec_dims, dim_z)
+
     train(
-    enc_dims=[128],
-    dec_dims=[32],#
+    image_width=28,
+    dim_x=dim_x,
+    dim_z=dim_z,
+    encoder=encoder,
+    decoder=decoder,
+
+    learning_rate=0.0001,
+    optimizer=tf.train.AdamOptimizer,
+    loss=elbo_loss,
+    batch_size=100,
+
+    results_dir='results',
+    max_steps=20000,
     #encoder=nf_encoder(1),
-    encoder=iaf_encoder(1),
-    max_steps=20000
+
+    #encoder=iaf_encoder(1),
     #encoder=conv_encoder(layer_dict, in_shape),
         )
