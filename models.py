@@ -33,7 +33,7 @@ def nf_encoder(neural_net, dim_z, flow):
         def norm_flow(z, us, ws, bs):
             d_z = z.get_shape()[-1].value # Get dimension of z
             K = us.get_shape()[-1].value / d_z # Find length of flow from given parameters
-            sum_log_detj = 0
+            sum_log_detj = 0.0
             for k in range(K):
                 u, w, b = us[:, k*dim_z:(k+1)*d_z], ws[:, k*d_z:(k+1)*d_z], bs[:, k]
                 z, log_detj = norm_flow_one_step(z, u, w, b)
@@ -90,7 +90,7 @@ def iaf_encoder(neural_net, dim_z, flow):
         d_z = z.get_shape()[-1].value # Get dimension of z
         K = mus.get_shape()[-1].value / d_z # Find length of flow from given parameters
         # IAF transformation and log det of Jacobian; eqns (9) and (10) of [Kingma 2016]
-        sum_log_detj = 0
+        sum_log_detj = 0.0
         for k in range(K):
             mu, std = mus[:, k*d_z:(k+1)*d_z], stds[:, k*d_z:(k+1)*d_z]
             z, log_detj = inverse_autoregressive_flow_one_step(z, mu, std)
@@ -99,6 +99,43 @@ def iaf_encoder(neural_net, dim_z, flow):
 
     return lambda x, e: _iaf_encoder(x, e, neural_net, dim_z, flow)
 
+def hf_encoder(neural_net, dim_z, flow):
+    def _hf_encoder(x, e, neural_net, dim_z, flow):
+        output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'flow_vs': dim_z * flow}
+        last_hidden = neural_net(x)
+        outputs = {}
+        for key in ['mu', 'log_std']:
+            outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
+        if output_dims_dict['flow_vs'] != 0:
+            outputs['flow_vs'] = fc_layer(last_hidden, output_dims_dict['flow_vs'], layer_name='flow_vs', act=None)
+        else: outputs['flow_vs'] = None
+        mu, log_std, flow_vs = outputs['mu'], outputs['log_std'], outputs['flow_vs']
+
+        z0 = mu + tf.exp(log_std) * e # preflow
+
+        zk, sum_log_detj = householder_flow(z0, flow_vs) # apply the IAF
+        outputs['sum_log_detj'] = sum_log_detj
+        outputs['z0'] = z0
+        outputs['zk'] = zk
+
+        return outputs, zk
+
+    def householder_flow(z, vs):
+        if vs is not None:
+            d_z = z.get_shape()[-1].value # Get dimension of z
+            K = vs.get_shape()[-1].value / d_z # Find length of flow from given parameters
+            for k in range(K):
+                v = vs[:, k*d_z:(k+1)*d_z]
+                z = householder(z, v)
+        sum_log_detj = 0.0
+        return z, sum_log_detj
+
+    def householder(z, v):
+        norm_squared_v = tf.expand_dims(tf.reduce_sum(tf.pow(v, 2), 1, keep_dims=True), 1) # HACKHACKHACK
+        H = 1 - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v
+        return tf.reduce_sum(tf.mul(H, tf.expand_dims(z, 1)), 2)
+
+    return lambda x, e: _hf_encoder(x, e, neural_net, dim_z, flow)
 
 ###### DECODERS
 def basic_decoder(neural_net, dim_x):

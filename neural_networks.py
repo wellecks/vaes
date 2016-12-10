@@ -53,7 +53,7 @@ def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
             if act is not None:
                 h = act(preactivate, name='activation')
             else: h = preactivate
-        input_dim = input_tensor.get_shape()[-1].value
+        input_dim = h.get_shape()[-1].value
         with tf.variable_scope('out'):
             with tf.variable_scope('weights'):
                 weights = weight_variable([input_dim, output_dim])
