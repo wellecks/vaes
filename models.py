@@ -62,7 +62,8 @@ def nf_encoder(neural_net, dim_z, flow):
 
 def iaf_encoder(neural_net, dim_z, flow):
     def _iaf_encoder(x, e, neural_net, dim_z, flow):
-        output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'flow_mus': dim_z * flow, 'flow_log_stds': dim_z * flow}
+        output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
+        flow_dims_dict = {'mu': dim_z * flow, 'log_std': dim_z * flow}
 
         last_hidden = neural_net(x)
         outputs = {}
@@ -70,14 +71,8 @@ def iaf_encoder(neural_net, dim_z, flow):
             outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
 
         mu, log_std = outputs['mu'], outputs['log_std']
-        z0 = mu + tf.exp(log_std) * e # preflow
-
-        for key in ['flow_mus', 'flow_log_stds']:
-            outputs[key] = made_layer(z0, output_dims_dict[key], layer_name=key)
-
-        flow_mus, flow_log_stds = outputs['flow_mus'], outputs['flow_log_stds']
-        flow_stds = tf.exp(flow_log_stds)
-        zk, sum_log_detj = inverse_autoregressive_flow_one_step(z0, flow_mus, flow_stds) # apply the IAF
+        z0 = mu + tf.exp(log_std) * e  # preflow
+        zk, sum_log_detj = iaf(z0, flow, flow_dims_dict['mu'], flow_dims_dict['log_std'])
 
         outputs['sum_log_detj'] = sum_log_detj
         outputs['z0'] = z0
@@ -85,26 +80,18 @@ def iaf_encoder(neural_net, dim_z, flow):
 
         return outputs, zk
 
-
-    def inverse_autoregressive_flow_one_step(z, mu, std):
-        z = (z - mu) / std
-        log_detj = -tf.reduce_sum(tf.log(std), 1)
+    def iaf(z0, K, mu_dim, log_std_dim):
+        z = z0
+        log_detj = 0.0
+        for k in range(K):
+            # See equations (10), (11) of Kingma 2016
+            mu = made_layer(z, mu_dim, 'flow_mu_%d' % k)
+            log_std = made_layer(z, log_std_dim, 'flow_log_std_%d' % k)
+            z = (z - mu) / tf.exp(log_std)
+            log_detj += -tf.reduce_sum(log_std, 1)
         return z, log_detj
 
-    def inverse_autoregressive_flow(z, mus, stds):
-        d_z = z.get_shape()[-1].value # Get dimension of z
-        K = mus.get_shape()[-1].value / d_z # Find length of flow from given parameters
-        # IAF transformation and log det of Jacobian; eqns (9) and (10) of [Kingma 2016]
-        sum_log_detj = 0.0
-        for k in range(K):
-            mu, std = mus[:, k*d_z:(k+1)*d_z], stds[:, k*d_z:(k+1)*d_z]
-            z, log_detj = inverse_autoregressive_flow_one_step(z, mu, std)
-            sum_log_detj += log_detj
-
-        return z, sum_log_detj
-
     return lambda x, e: _iaf_encoder(x, e, neural_net, dim_z, flow)
-
 
 def hf_encoder(neural_net, dim_z, flow):
     def _hf_encoder(x, e, neural_net, dim_z, flow):
