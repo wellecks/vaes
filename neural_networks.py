@@ -1,25 +1,8 @@
 import tensorflow as tf
 import numpy as np
 
+from nn_utils import *
 # We can't initialize these variables to 0 - the network will get stuck.
-def weight_variable(shape):
-    """Create a weight variable with appropriate initialization."""
-    return tf.get_variable('weights', shape, initializer=tf.contrib.layers.xavier_initializer())
-
-def bias_variable(shape):
-    """Create a bias variable with appropriate initialization."""
-    return tf.get_variable('bias', shape, initializer=tf.constant_initializer(0.1))
-
-def variable_summaries(var):
-    """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
-    with tf.variable_scope('summaries'):
-      mean = tf.reduce_mean(var)
-      tf.scalar_summary('mean', mean)
-      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-      tf.scalar_summary('stddev', stddev)
-      tf.scalar_summary('max', tf.reduce_max(var))
-      tf.scalar_summary('min', tf.reduce_min(var))
-      tf.histogram_summary('histogram', var)
 
 def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     """Reusable code for making a simple neural net layer.
@@ -46,53 +29,48 @@ def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
       #tf.histogram_summary('activations', activations)
       return activations
 
-def dtanh(tensor):
-    return 1.0 - tf.square(tf.tanh(tensor))
-
-def conv_layer(input_tensor, in_channels, out_channels, filter_size, stride, layer_name, act=tf.nn.relu):
-    with tf.variable_scope(layer_name):
-      # This Variable will hold the state of the weights for the layer
-      with tf.variable_scope('weights'):
-          weights = weight_variable([filter_size, filter_size, in_channels, out_channels])
-          #variable_summaries(weights)
-      with tf.variable_scope('bias'):
-        biases = bias_variable([1, 1, out_channels])
-        #variable_summaries(biases)
-      with tf.variable_scope('Wx_plus_b'):
-        preactivate = tf.nn.conv2d(input_tensor, filter=weights, strides=[1, stride, stride, 1], padding='SAME') + biases
-        #tf.histogram_summary('pre_activations', preactivate)
-      if act is not None:
-          activations = act(preactivate, name='activation')
-      else: activations = preactivate
-      #tf.histogram_summary('activations', activations)
-      return activations
-
-def made_layer(input_tensor, input_dim, output_dim, layer_name, act=tf.nn.relu):
+def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     # Adding a name scope ensures logical grouping of the layers in the graph.
 
-    def _get_made_mask(dim_in, dim_out):
+    def _get_made_masks(dim_in, dim_out):
+
         msh = np.random.randint(1, dim_in, size=dim_out)
         mask = (msh[:, np.newaxis] >= (np.tile(range(0, dim_in), [dim_out, 1])+1)).astype(np.float).T
         return mask
 
+    input_dim = input_tensor.get_shape()[-1].value
     with tf.variable_scope(layer_name):
-      # This Variable will hold the state of the weights for the layer
-      with tf.variable_scope('weights'):
-          weights = weight_variable([input_dim, output_dim])
-      with tf.variable_scope('mask'):
-          mask = _get_made_mask(input_dim, output_dim)
-          #variable_summaries(weights)
-      with tf.variable_scope('bias'):
-        biases = bias_variable([output_dim])
-        #variable_summaries(biases)
-      with tf.variable_scope('Wx_plus_b'):
-        preactivate = tf.matmul(input_tensor, weights * mask) + biases
-        #tf.histogram_summary('pre_activations', preactivate)
-      if act is not None:
-          activations = act(preactivate, name='activation')
-      else: activations = preactivate
-      #tf.histogram_summary('activations', activations)
-      return activations
+        # This Variable will hold the state of the weights for the layer
+        with tf.variable_scope('in'):
+            with tf.variable_scope('weights'):
+                weights = weight_variable([input_dim, output_dim])
+            with tf.variable_scope('in_mask'):
+                mask = _get_made_masks(input_dim, output_dim)
+            with tf.variable_scope('bias'):
+                biases = bias_variable([output_dim])
+            #variable_summaries(biases)
+            with tf.variable_scope('Wx_plus_b'):
+                preactivate = tf.matmul(input_tensor, weights * mask) + biases
+            #tf.histogram_summary('pre_activations', preactivate)
+            if act is not None:
+                h = act(preactivate, name='activation')
+            else: h = preactivate
+        input_dim = h.get_shape()[-1].value
+        with tf.variable_scope('out'):
+            with tf.variable_scope('weights'):
+                weights = weight_variable([input_dim, output_dim])
+            with tf.variable_scope('in_mask'):
+                mask = _get_made_masks(input_dim, output_dim)
+            with tf.variable_scope('bias'):
+                biases = bias_variable([output_dim])
+            with tf.variable_scope('Wx_plus_b'):
+                preactivate = tf.matmul(h, weights * mask) + biases
+            #tf.histogram_summary('pre_activations', preactivate)
+            if act is not None:
+                activations = act(preactivate, name='activation')
+            else: activations = preactivate
+
+        return activations
 
 def nn(input_tensor, dims_hidden, name, act=tf.nn.relu):
     with tf.variable_scope(name):
@@ -124,3 +102,41 @@ def cnn(input_tensor, in_shape, layer_dict, output_dims_dict, name, act=tf.nn.ta
             outputs[key] = fc_layer(h, dim_flattened, output_dims_dict[key], layer_name=key, act=None)
         print [outputs[k].get_shape() for k in output_dims_dict]
     return outputs
+
+
+# Create model
+def conv_net(x, layer_dict):
+    # Reshape input picture
+    x = tf.reshape(x, shape=[-1, 28, 28, 1])
+
+    # Convolution Layer
+    with tf.variable_scope('Conv1'):
+        shape = layer_dict['wc1']
+        weights, biases = weight_variable(shape), bias_variable(shape[-1])
+        conv1 = conv2d(x, weights, biases)
+        # Max Pooling (down-sampling)
+        conv1 = maxpool2d(conv1, k=2)
+
+    # Convolution Layer
+    with tf.variable_scope('Conv2'):
+        shape = layer_dict['wc2']
+        weights, biases = weight_variable(shape), bias_variable(shape[-1])
+        conv2 = conv2d(conv1, weights, biases)
+        # Max Pooling (down-sampling)
+        conv2 = maxpool2d(conv2, k=2)
+
+    # Fully connected layer
+    with tf.variable_scope('FC1'):
+        shape = layer_dict['wd1']
+        weights, biases = weight_variable(shape), bias_variable(shape[-1])
+        # Reshape conv2 output to fit fully connected layer input
+        fc1 = tf.contrib.layers.flatten(conv2)
+        fc1 = tf.add(tf.matmul(fc1, weights), biases)
+        fc1 = tf.nn.relu(fc1)
+
+    # Output, class prediction
+    with tf.variable_scope('Out'):
+        shape = layer_dict['out']
+        weights, biases = weight_variable(shape), bias_variable(shape[-1])
+        out = tf.add(tf.matmul(fc1, weights), biases)
+    return out
