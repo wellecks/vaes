@@ -66,6 +66,7 @@ def iaf_encoder(neural_net, dim_z, flow):
         for key in ['mu', 'log_std']:
             outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
         extra_hidden = fc_layer(last_hidden, dim_z, layer_name='extra_hidden', act=None)
+
         for key in ['flow_mus', 'flow_log_stds']:
             outputs[key] = made_layer(extra_hidden, output_dims_dict[key], layer_name=key)
 
