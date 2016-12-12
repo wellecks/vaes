@@ -35,6 +35,7 @@ def train(
         n_view=10,
         **kwargs
         ):
+    anneal_lr = kwargs.pop('anneal_lr', False)
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
     on_epoch = tf.Variable(0, trainable=False)
     dt = datetime.datetime.now()
@@ -119,9 +120,10 @@ def train(
         print('Epoch: {:d}\t Training loss: {:.2f}, Validation loss {:.2f} ({:.1f} examples/sec, {:.1f} sec/epoch)'.format(epoch, l, l_v, examples_per_sec, duration))
 
         if l_v > best_validation_loss:
-            lr /= 2
-            learning_rate /= 2
-            print "Annealing learning rate to {}".format(learning_rate)
+            if anneal_lr:
+                lr /= 2
+                learning_rate /= 2
+                print "Annealing learning rate to {}".format(learning_rate)
         else: best_validation_loss = l_v
 
         samples = sess.run([out_op], feed_dict={x: visualized, e: e_visualized})
@@ -143,7 +145,8 @@ if __name__ == '__main__':
     group.add_argument('--nf', action='store_true')
     group.add_argument('--iaf', action='store_true')
 
-    parser.add_argument('--flow', type=int, default=2)
+    parser.add_argument('--anneal-lr', action='store_true')
+    parser.add_argument('--flow', type=int, default=1)
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
@@ -180,16 +183,13 @@ if __name__ == '__main__':
     #encoder, model_type = iaf_encoder(encoder_net, dim_z, flow), 'Inverse Autoregressive Flow'
 
 
-    ### DECODER
-    decoder = basic_decoder(decoder_net, dim_x)
-
-
     extra_settings = {
-    # 'model_type':model_type,
-    'flow length':flow,
-    'encoder structure':enc_dims,
-    'decoder structure':dec_dims,
-    # 'kl annealing rate':kl_annealing_rate
+        # 'model_type':model_type,
+        'flow length': flow,
+        'encoder structure': enc_dims,
+        'decoder structure': dec_dims,
+        # 'kl annealing rate':kl_annealing_rate
+        'anneal_lr': args.anneal_lr
     }
 
     #######################################
