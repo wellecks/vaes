@@ -62,7 +62,6 @@ def nf_encoder(neural_net, dim_z, flow):
 
 def iaf_encoder(neural_net, dim_z, flow):
     def _iaf_encoder(x, e, neural_net, dim_z, flow):
-
         output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'flow_mus': dim_z * flow, 'flow_log_stds': dim_z * flow}
 
         last_hidden = neural_net(x)
@@ -70,17 +69,15 @@ def iaf_encoder(neural_net, dim_z, flow):
         for key in ['mu', 'log_std']:
             outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
 
-        extra_hidden = fc_layer(last_hidden, dim_z, layer_name='extra_hidden', act=None)
-
-        for key in ['flow_mus', 'flow_log_stds']:
-            outputs[key] = made_layer(extra_hidden, output_dims_dict[key], layer_name=key)
-
-        mu, log_std, flow_mus, flow_log_stds = outputs['mu'], outputs['log_std'], outputs['flow_mus'], outputs['flow_log_stds']
-
+        mu, log_std = outputs['mu'], outputs['log_std']
         z0 = mu + tf.exp(log_std) * e # preflow
 
+        for key in ['flow_mus', 'flow_log_stds']:
+            outputs[key] = made_layer(z0, output_dims_dict[key], layer_name=key)
+
+        flow_mus, flow_log_stds = outputs['flow_mus'], outputs['flow_log_stds']
         flow_stds = tf.exp(flow_log_stds)
-        zk, sum_log_detj = inverse_autoregressive_flow(z0, flow_mus, flow_stds) # apply the IAF
+        zk, sum_log_detj = inverse_autoregressive_flow_one_step(z0, flow_mus, flow_stds) # apply the IAF
 
         outputs['sum_log_detj'] = sum_log_detj
         outputs['z0'] = z0
