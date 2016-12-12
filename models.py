@@ -22,13 +22,12 @@ def nf_encoder(neural_net, dim_z, flow):
 
         def norm_flow_one_step(z, u, w, b):
             temp = tf.expand_dims(tf.nn.tanh(tf.reduce_sum(w * z, 1) + b), 1)
-            temp = tf.tile(temp, [1, u.get_shape()[1].value])
             z = z + tf.mul(u, temp)
 
             # Eqn. (11) and (12)
             temp = tf.expand_dims(dtanh(tf.reduce_sum(w * z, 1) + b), 1)
-            psi = tf.tile(temp, [1, w.get_shape()[1].value]) * w
-            log_detj = tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1))
+            psi = temp * w
+            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1)))    
             return z, log_detj
 
         def norm_flow(z, us, ws, bs):

@@ -36,7 +36,7 @@ def train(
         **kwargs
         ):
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
-    on_epoch = tf.Variable(0, trainable=False)
+    on_epoch = tf.placeholder(tf.float32, name='on_epoch')
     dt = datetime.datetime.now()
     results_dir += '/{}_{:02d}-{:02d}-{:02d}'.format(dt.date(), dt.hour, dt.minute, dt.second)
     os.mkdir(results_dir)
@@ -59,12 +59,13 @@ def train(
     e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
     z_params, z = encoder(x, e)
     x_pred = decoder(z)
-    #kl_weighting = tf.Variable(1.0 - tf.exp(-on_epoch / kl_annealing_rate)) if kl_annealing_rate is not None else None
-    kl_weighting = 1
-    loss_op = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
+    #kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
+    kl_weighting = 0.0
+    train_loss, valid_loss, monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
+    valid_loss = train_loss
     out_op = x_pred
     lr = tf.Variable(learning_rate)
-    train_op = optimizer(lr).minimize(loss_op, global_step=global_step)
+    train_op = optimizer(lr).minimize(train_loss, global_step=global_step)
 
     # Make training and validation sets
     training_data, validation_data = dataset['train'], dataset['valid']
@@ -74,7 +75,9 @@ def train(
 
     # Make summaries
     rec_summary = tf.image_summary("rec", vec2im(out_op, batch_size, image_width), max_images=10)
-    validation_summary = tf.scalar_summary("validation loss", loss_op)
+    for fn_name, fn in monitor_functions.items():
+        tf.scalar_summary(fn_name, fn)
+
     summary_op = tf.merge_all_summaries()
 
     # Create a saver.
@@ -87,15 +90,16 @@ def train(
     samples_list = []
     batch_counter = 0
     best_validation_loss = 1e100
+    number_of_validation_failures = 0
+    feed_dict = {}
     for epoch in range(max_epochs):
-        on_epoch += 1
+        feed_dict[on_epoch] = epoch
         start_time = time.time()
         for _ in xrange(n_train_batches):
             batch_counter += 1
-            x_ = training_data.next_batch(batch_size)
-            e_ = np.random.normal(0, 1, (batch_size, dim_z))
-            feed_dict={x: x_, e: e_}
-            _, l = sess.run([train_op, loss_op], feed_dict)
+            feed_dict[x] = training_data.next_batch(batch_size)
+            feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
+            _, l = sess.run([train_op, train_loss], feed_dict=feed_dict)
 
             if batch_counter % 100 == 0:
                 summary_str = sess.run(summary_op, feed_dict=feed_dict)
@@ -108,21 +112,29 @@ def train(
 
         l_v = 0
         for _ in range(n_valid_batches):
-            x_valid = validation_data.next_batch(batch_size)
-            e_valid = np.random.normal(0, 1, (batch_size, dim_z))
-            l_v_batched = sess.run(loss_op, feed_dict={x: x_valid, e: e_valid})
+
+            feed_dict[x] = validation_data.next_batch(batch_size)
+            feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
+            l_v_batched = sess.run(valid_loss, feed_dict=feed_dict)
             l_v += l_v_batched
         l_v /= n_valid_batches
 
         duration = time.time() - start_time
         examples_per_sec = (n_valid_batches + n_train_batches) * batch_size * 1.0 / duration
-        print('Epoch: {:d}\t Training loss: {:.2f}, Validation loss {:.2f} ({:.1f} examples/sec, {:.1f} sec/epoch)'.format(epoch, l, l_v, examples_per_sec, duration))
+        print('Epoch: {:d}\t Weighted training loss: {:.2f}, Validation loss {:.2f} ({:.1f} examples/sec, {:.1f} sec/epoch)'.format(epoch, l, l_v, examples_per_sec, duration))
 
         if l_v > best_validation_loss:
+            number_of_validation_failures += 1
+        else:
+            best_validation_loss = l_v
+            number_of_validation_failures = 0
+
+        if number_of_validation_failures == 5:
             lr /= 2
             learning_rate /= 2
             print "Annealing learning rate to {}".format(learning_rate)
-        else: best_validation_loss = l_v
+            number_of_validation_failures = 0
+
 
         samples = sess.run([out_op], feed_dict={x: visualized, e: e_visualized})
         samples = np.reshape(samples, (n_view, image_width, image_width))
@@ -166,8 +178,8 @@ if __name__ == '__main__':
 
     ##############
 
-    #kl_annealing_rate = 5.0
-
+    kl_annealing_rate = 10
+    #kl_annealing_rate = None
     ### ENCODER
     #encoder, model_type = basic_encoder(encoder_net, dim_z), 'Vanilla VAE'
     #encoder, model_type = nf_encoder(encoder_net, dim_z, flow), 'Normalizing Flow'
@@ -184,7 +196,7 @@ if __name__ == '__main__':
     'flow length':flow,
     'encoder structure':enc_dims,
     'decoder structure':dec_dims,
-    #'kl annealing rate':kl_annealing_rate
+    'kl annealing rate':kl_annealing_rate
     }
 
     #######################################

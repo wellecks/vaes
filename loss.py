@@ -22,34 +22,42 @@ def gaussian_log_pdf(mu, log_std, z):
     return tf.contrib.distributions.MultivariateNormalDiag(
                 mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z)
 
-def elbo_loss(pred, actual, var_reg=1, kl_weighting=None, **kwargs):
+def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, **kwargs):
+    monitor_functions = {}
 
     mu = kwargs['mu']
     log_std = kwargs['log_std']
     if 'sum_log_detj' not in kwargs:
-        kl = tf.reduce_mean(analytic_kl_divergence(mu, log_std))
-        rec_err = tf.reduce_mean(cross_entropy(pred, actual))
-
+        raw_kl = tf.reduce_mean(analytic_kl_divergence(mu, log_std), name='kl')
+        rec_err = tf.reduce_mean(cross_entropy(pred, actual), name='rec_err')
     else:
         sum_log_detj, z0, zk  = kwargs['sum_log_detj'], kwargs['z0'], kwargs['zk']
-        sum_log_detj = tf.reduce_mean(sum_log_detj)
-        log_q0_z0 = tf.reduce_mean(gaussian_log_pdf(mu, log_std, z0))
+        sum_log_detj = tf.reduce_mean(sum_log_detj, name='sum_log_detj')
+        log_q0_z0 = tf.reduce_mean(gaussian_log_pdf(mu, log_std, z0), name='log_q0_z0')
         log_qk_zk = log_q0_z0 - sum_log_detj
-        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.ones_like(mu), zk))
-        log_p_x_given_zk = -tf.reduce_mean(cross_entropy(pred, actual))
+        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.ones_like(mu), zk), name='log_p_zk')
+        log_p_x_given_zk = -tf.reduce_mean(cross_entropy(pred, actual), name='log_p_x_given_zk')
         rec_err = -log_p_x_given_zk
+        raw_kl = log_qk_zk - log_p_zk
+        monitor_functions.update(
+        {'log_p_zk':log_p_zk,
+        'log_qk_zk':log_qk_zk,
+        'log_p_x_given_zk':log_p_x_given_zk,
+        'log_q0_z0':log_q0_z0,
+        'sum_log_detj':sum_log_detj
+        })
 
-        kl = log_qk_zk - log_p_zk
-        tf.scalar_summary('Sum of log det Jacobians', sum_log_detj)
-        tf.scalar_summary('Log q0(z0)', log_q0_z0)
-        tf.scalar_summary('Log qk(zk)', log_qk_zk)
-        tf.scalar_summary('Log p(zk)', log_p_zk)
-    if kl_weighting is not None:
-        loss =  kl_weighting * kl + rec_err
-    else: loss = kl + rec_err
+    weighted_kl = kl_weighting * raw_kl
+    unweighted_elbo = raw_kl + rec_err
+    weighted_elbo = weighted_kl + rec_err
 
-    tf.scalar_summary('Reconstruction error', rec_err)
-    tf.scalar_summary('KL divergence', kl)
-    tf.scalar_summary('ELBO', loss)
-
-    return loss
+    monitor_functions.update({
+    'weighted_kl':weighted_kl,
+    'unweighted_elbo':unweighted_elbo,
+    'weighted_elbo':weighted_elbo,
+    'raw_kl':raw_kl,
+    'rec_err':rec_err,
+    })
+    train_loss = weighted_elbo
+    valid_loss = unweighted_elbo
+    return train_loss, valid_loss, monitor_functions
