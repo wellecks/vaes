@@ -39,15 +39,16 @@ def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
         return mask_in, mask_out
 
     input_dim = input_tensor.get_shape()[-1].value
+    made_hidden_dim = 300
     with tf.variable_scope(layer_name):
         with tf.variable_scope('weight_in'):
-            weights_in = weight_variable([input_dim, output_dim])
+            weights_in = weight_variable([input_dim, made_hidden_dim])
         with tf.variable_scope('weight_out'):
-            weights_out = weight_variable([output_dim, input_dim])
+            weights_out = weight_variable([made_hidden_dim, input_dim])
         with tf.variable_scope('masks'):
-            mask_in, mask_out = _get_made_masks(input_dim, output_dim)
+            mask_in, mask_out = _get_made_masks(input_dim, made_hidden_dim)
         with tf.variable_scope('bias_in'):
-            biases_in = bias_variable([output_dim])
+            biases_in = bias_variable([made_hidden_dim])
         with tf.variable_scope('bias_out'):
             biases_out = bias_variable([input_dim])
 
