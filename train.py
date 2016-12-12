@@ -17,6 +17,7 @@ from models import *
 from reconstructions import *
 from loss import *
 from datasets import binarized_mnist
+import argparse
 
 def train(
         image_width,
@@ -179,11 +180,11 @@ if __name__ == '__main__':
 
 
     extra_settings = {
-    'model_type':model_type,
+    #'model_type':model_type,
     'flow length':flow,
     'encoder structure':enc_dims,
     'decoder structure':dec_dims,
-    'kl annealing rate':kl_annealing_rate
+    #'kl annealing rate':kl_annealing_rate
     }
 
     #######################################
