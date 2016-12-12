@@ -8,6 +8,7 @@ https://arxiv.org/pdf/1312.6114v10.pdf
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+import argparse
 import time
 import datetime
 import inspect
@@ -143,7 +144,12 @@ if __name__ == '__main__':
     group.add_argument('--iaf', action='store_true')
 
     parser.add_argument('--flow', type=int, default=2)
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
+
+    # Set random seeds
+    np.random.seed(args.seed)
+    tf.set_random_seed(args.seed)
 
     ### TRAINING SETTINGS
     dim_x, dim_z, enc_dims, dec_dims = 784, 40, [300, 300], [300, 300]
@@ -179,11 +185,11 @@ if __name__ == '__main__':
 
 
     extra_settings = {
-    'model_type':model_type,
+    # 'model_type':model_type,
     'flow length':flow,
     'encoder structure':enc_dims,
     'decoder structure':dec_dims,
-    'kl annealing rate':kl_annealing_rate
+    # 'kl annealing rate':kl_annealing_rate
     }
 
     #######################################
