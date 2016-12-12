@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 
 from nn_utils import *
-# We can't initialize these variables to 0 - the network will get stuck.
 
 def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     """Reusable code for making a simple neural net layer.
@@ -11,9 +10,7 @@ def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     and adds a number of summary ops.
     """
     input_dim = input_tensor.get_shape()[-1].value
-    # Adding a name scope ensures logical grouping of the layers in the graph.
     with tf.variable_scope(layer_name):
-      # This Variable will hold the state of the weights for the layer
       with tf.variable_scope('weights'):
           weights = weight_variable([input_dim, output_dim])
           #variable_summaries(weights)
@@ -30,46 +27,38 @@ def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
       return activations
 
 def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
-    # Adding a name scope ensures logical grouping of the layers in the graph.
 
     def _get_made_masks(dim_in, dim_out):
-
+        """See eqns. (8), (9) of Germain 2015. These assume a single hidden layer auto-encoder."""
+        # msh[k] is max number of input units that the k'th hidden dimension can be connected to.
         msh = np.random.randint(1, dim_in, size=dim_out)
-        mask = (msh[:, np.newaxis] >= (np.tile(range(0, dim_in), [dim_out, 1])+1)).astype(np.float).T
-        return mask
+        # Eqn (8). An element is 1 when msh[k] >= d, for d in {1 ... dim_in}
+        mask_in = (msh[:, np.newaxis] >= (np.tile(range(0, dim_in), [dim_out, 1]) + 1)).astype(np.float).T
+        # Eqn (9). An element is 1 when d > msh[k]
+        mask_out = ((np.tile(np.arange(0, dim_in)[:, np.newaxis], [1, dim_out])+1) > msh[np.newaxis, :]).astype(np.float).T
+        return mask_in, mask_out
 
     input_dim = input_tensor.get_shape()[-1].value
+    made_hidden_dim = 300
     with tf.variable_scope(layer_name):
-        # This Variable will hold the state of the weights for the layer
-        with tf.variable_scope('in'):
-            with tf.variable_scope('weights'):
-                weights = weight_variable([input_dim, output_dim])
-            with tf.variable_scope('in_mask'):
-                mask = _get_made_masks(input_dim, output_dim)
-            with tf.variable_scope('bias'):
-                biases = bias_variable([output_dim])
-            #variable_summaries(biases)
-            with tf.variable_scope('Wx_plus_b'):
-                preactivate = tf.matmul(input_tensor, weights * mask) + biases
-            #tf.histogram_summary('pre_activations', preactivate)
-            if act is not None:
-                h = act(preactivate, name='activation')
-            else: h = preactivate
-        input_dim = h.get_shape()[-1].value
-        with tf.variable_scope('out'):
-            with tf.variable_scope('weights'):
-                weights = weight_variable([input_dim, output_dim])
-            with tf.variable_scope('in_mask'):
-                mask = _get_made_masks(input_dim, output_dim)
-            with tf.variable_scope('bias'):
-                biases = bias_variable([output_dim])
-            with tf.variable_scope('Wx_plus_b'):
-                preactivate = tf.matmul(h, weights * mask) + biases
-            #tf.histogram_summary('pre_activations', preactivate)
+        with tf.variable_scope('weight_in'):
+            weights_in = weight_variable([input_dim, made_hidden_dim])
+        with tf.variable_scope('weight_out'):
+            weights_out = weight_variable([made_hidden_dim, input_dim])
+        with tf.variable_scope('masks'):
+            mask_in, mask_out = _get_made_masks(input_dim, made_hidden_dim)
+        with tf.variable_scope('bias_in'):
+            biases_in = bias_variable([made_hidden_dim])
+        with tf.variable_scope('bias_out'):
+            biases_out = bias_variable([input_dim])
+
+        with tf.variable_scope('transformations'):
+            hidden = tf.nn.relu(tf.matmul(input_tensor, weights_in * mask_in) + biases_in)
+            preactivate = tf.matmul(hidden, weights_out * mask_out) + biases_out
             if act is not None:
                 activations = act(preactivate, name='activation')
-            else: activations = preactivate
-
+            else:
+                activations = preactivate
         return activations
 
 def nn(input_tensor, dims_hidden, name, act=tf.nn.relu):
