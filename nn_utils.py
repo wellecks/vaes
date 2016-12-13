@@ -12,7 +12,7 @@ def maxpool2d(x, k=2):
                           padding='SAME')
                           
 def dtanh(tensor):
-    return 1.0 - tf.square(tf.tanh(tensor))
+    return 1.0 - tf.square(tf.nn.tanh(tensor))
 
 def weight_variable(shape):
     """Create a weight variable with appropriate initialization."""
