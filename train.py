@@ -62,8 +62,10 @@ def train(
     z_params, z = encoder(x, e)
     x_pred = decoder(z)
     #kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
-    kl_weighting = 0.0
-    train_loss, valid_loss, monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
+    kl_weighting = 1.0
+    train_loss, valid_loss, monitor_functions = loss(x_pred, x,
+                                                     kl_weighting=kl_weighting,
+                                                     rec_err_fn=cross_entropy, **z_params)
     valid_loss = train_loss
     out_op = x_pred
     lr = tf.Variable(learning_rate)
@@ -149,12 +151,91 @@ def train(
     sess.close()
 
 
+def train_simple(
+        dim_x,
+        dim_z,
+        encoder,
+        decoder,
+        training_dataset,
+        validation_dataset=None,
+        learning_rate=0.0001,
+        optimizer=tf.train.AdamOptimizer,
+        batch_size=100,
+        max_epochs=10,
+        **kwargs):
+    print_every = kwargs.pop('print_every', 10)
+    # Set random seeds
+    seed = kwargs.pop('seed', 0)
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
+
+    rec_err_fn = l2_loss if kwargs.pop('rec_err_type', '') == 'l2_loss' else cross_entropy
+    anneal_lr = kwargs.pop('anneal_lr', False)
+
+    # Build computation graph and operations
+    x = tf.placeholder(tf.float32, [None, dim_x], 'x')
+    e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
+    z_params, z = encoder(x, e)
+    x_pred = decoder(z)
+
+    kl_weighting = 1
+    loss_op = elbo_loss(x_pred, x, kl_weighting=kl_weighting, rec_err_fn=rec_err_fn, **z_params)
+    out_op = x_pred
+    lr = tf.Variable(learning_rate)
+    train_op = optimizer(lr).minimize(loss_op)
+
+    # Make training and validation sets
+    n_train_batches = max(training_dataset.num_examples / batch_size, 1)
+    n_valid_batches = validation_dataset.num_examples / batch_size if validation_dataset is not None else 0
+
+    # Create a session
+    sess = tf.InteractiveSession()
+    sess.run(tf.initialize_all_variables())
+    batch_counter = 0
+    best_validation_loss = 1e100
+    for epoch in range(max_epochs):
+        for _ in xrange(n_train_batches):
+            batch_counter += 1
+
+            x_ = training_dataset.next_batch(batch_size)
+            e_ = np.random.normal(0, 1, (x_.shape[0], dim_z))
+            feed_dict = {x: x_, e: e_}
+            _, l = sess.run([train_op, loss_op], feed_dict)
+
+        l_v = 0.0
+        if validation_dataset is not None:
+            for _ in range(n_valid_batches):
+                x_valid = validation_dataset.next_batch(batch_size)
+                e_valid = np.random.normal(0, 1, (batch_size, dim_z))
+                l_v_batched = sess.run(loss_op, feed_dict={x: x_valid, e: e_valid})
+                l_v += l_v_batched
+            l_v /= n_valid_batches
+
+            if l_v > best_validation_loss:
+                if anneal_lr:
+                    lr /= 2
+                    learning_rate /= 2
+                    print "Annealing learning rate to {}".format(learning_rate)
+            else: best_validation_loss = l_v
+
+        if (epoch + 1) % print_every == 0:
+            print('Epoch: {:d}\t Training loss: {:.2f}'.format(epoch+1, l))
+
+    ops = {
+        'z': z,
+        'out': out_op,
+        'x': x,
+        'e': e
+    }
+    return ops, sess
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--basic', action='store_true')
     group.add_argument('--nf', action='store_true')
     group.add_argument('--iaf', action='store_true')
+    group.add_argument('--hf', action='store_true')
 
     parser.add_argument('--anneal-lr', action='store_true')
     parser.add_argument('--flow', type=int, default=1)
@@ -165,41 +246,31 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     tf.set_random_seed(args.seed)
 
-    ### TRAINING SETTINGS
+    # TRAINING SETTINGS
     dim_x, dim_z, enc_dims, dec_dims = 784, 40, [300, 300], [300, 300]
     encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh)
-    #encoder_net = lambda x: conv_net(x, layer_dict)
     decoder_net = lambda z: nn(z, dec_dims, name='decoder', act=tf.nn.tanh)
     flow = args.flow
 
-    ### ENCODER
+    # ENCODER
     if args.basic:
         encoder = basic_encoder(encoder_net, dim_z)
     if args.nf:
         encoder = nf_encoder(encoder_net, dim_z, flow)
     if args.iaf:
         encoder = iaf_encoder(encoder_net, dim_z, flow)
+    if args.hf:
+        encoder = hf_encoder(encoder_net, dim_z, flow)
 
-    ### DECODER
+    # DECODER
     decoder = basic_decoder(decoder_net, dim_x)
 
-    ##############
-
     kl_annealing_rate = 10
-    #kl_annealing_rate = None
-    ### ENCODER
-    #encoder, model_type = basic_encoder(encoder_net, dim_z), 'Vanilla VAE'
-    #encoder, model_type = nf_encoder(encoder_net, dim_z, flow), 'Normalizing Flow'
-    #encoder, model_type = hf_encoder(encoder_net, dim_z, flow), 'Householder Flow'
-    #encoder, model_type = iaf_encoder(encoder_net, dim_z, flow), 'Inverse Autoregressive Flow'
-
-
     extra_settings = {
-        # 'model_type':model_type,
         'flow length': flow,
         'encoder structure': enc_dims,
         'decoder structure': dec_dims,
-        'kl annealing rate':kl_annealing_rate
+        'kl annealing rate':kl_annealing_rate,
         'anneal_lr': args.anneal_lr
     }
 
