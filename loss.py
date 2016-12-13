@@ -10,6 +10,10 @@ def cross_entropy(obs, actual, offset=1e-7):
         return -tf.reduce_sum(actual * tf.log(obs_) +
                               (1 - actual) * tf.log(1 - obs_), 1)
 
+def l2_loss(obs, actual):
+    with tf.name_scope("l2"):
+        return tf.nn.l2_loss(obs - actual)
+
 def analytic_kl_divergence(mu, log_std):
     '''Compute the batched KL divergence between a diagonal Gaussian and a standard Gaussian'''
     kl = -(0.5*tf.reduce_sum(1.0 + 2 * log_std - tf.square(mu) - tf.exp(2 * log_std), 1))
@@ -22,21 +26,21 @@ def gaussian_log_pdf(mu, log_std, z):
     return tf.contrib.distributions.MultivariateNormalDiag(
                 mu=mu, diag_stdev=tf.maximum(tf.exp(log_std), 1e-15)).log_pdf(z)
 
-def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, **kwargs):
+def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, rec_err_fn=cross_entropy, **kwargs):
     monitor_functions = {}
 
     mu = kwargs['mu']
     log_std = kwargs['log_std']
     if 'sum_log_detj' not in kwargs:
         raw_kl = tf.reduce_mean(analytic_kl_divergence(mu, log_std), name='kl')
-        rec_err = tf.reduce_mean(cross_entropy(pred, actual), name='rec_err')
+        rec_err = tf.reduce_mean(rec_err_fn(pred, actual), name='rec_err')
     else:
         sum_log_detj, z0, zk  = kwargs['sum_log_detj'], kwargs['z0'], kwargs['zk']
         sum_log_detj = tf.reduce_mean(sum_log_detj, name='sum_log_detj')
         log_q0_z0 = tf.reduce_mean(gaussian_log_pdf(mu, log_std, z0), name='log_q0_z0')
         log_qk_zk = log_q0_z0 - sum_log_detj
         log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.ones_like(mu), zk), name='log_p_zk')
-        log_p_x_given_zk = -tf.reduce_mean(cross_entropy(pred, actual), name='log_p_x_given_zk')
+        log_p_x_given_zk = -tf.reduce_mean(rec_err_fn(pred, actual), name='log_p_x_given_zk')
         rec_err = -log_p_x_given_zk
         raw_kl = log_qk_zk - log_p_zk
         monitor_functions.update(

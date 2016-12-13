@@ -3,6 +3,7 @@ import numpy as np
 
 from nn_utils import *
 
+
 def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     """Reusable code for making a simple neural net layer.
     It does a matrix multiply, bias add, and then uses tanh to nonlinearize.
@@ -11,20 +12,17 @@ def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
     """
     input_dim = input_tensor.get_shape()[-1].value
     with tf.variable_scope(layer_name):
-      with tf.variable_scope('weights'):
-          weights = weight_variable([input_dim, output_dim])
-          #variable_summaries(weights)
-      with tf.variable_scope('bias'):
-        biases = bias_variable([output_dim])
-        #variable_summaries(biases)
-      with tf.variable_scope('Wx_plus_b'):
-        preactivate = tf.matmul(input_tensor, weights) + biases
-        #tf.histogram_summary('pre_activations', preactivate)
-      if act is not None:
-          activations = act(preactivate, name='activation')
-      else: activations = preactivate
-      #tf.histogram_summary('activations', activations)
-      return activations
+        with tf.variable_scope('weights'):
+            weights = weight_variable([input_dim, output_dim])
+        with tf.variable_scope('bias'):
+            biases = bias_variable([output_dim])
+        with tf.variable_scope('Wx_plus_b'):
+            preactivate = tf.matmul(input_tensor, weights) + biases
+        if act is not None:
+            activations = act(preactivate, name='activation')
+        else:
+            activations = preactivate
+        return activations
 
 def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
 
@@ -60,6 +58,29 @@ def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
             else:
                 activations = preactivate
         return activations
+
+def nf_layer(input_tensor, output_dim, layer_name):
+    # See equations (10), (11) of Kingma 2016
+    input_dim = input_tensor.get_shape()[-1].value
+    with tf.variable_scope(layer_name):
+        with tf.variable_scope('u'):
+            u = weight_variable(input_dim)
+        with tf.variable_scope('w'):
+            w = weight_variable(input_dim)
+        with tf.variable_scope('b'):
+            b = bias_variable(1)
+
+        with tf.variable_scope('transformations'):
+            z = input_tensor
+            temp = tf.expand_dims(tf.nn.tanh(tf.reduce_sum(w * z, 1) + b), 1)
+            temp = tf.tile(temp, [1, output_dim])
+            z = z + tf.mul(u, temp)
+
+            temp = tf.expand_dims(dtanh(tf.reduce_sum(w * z, 1) + b), 1)
+            temp = tf.tile(temp, [1, output_dim])
+            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, temp * w), 1)))
+
+        return z, log_detj
 
 def nn(input_tensor, dims_hidden, name, act=tf.nn.relu):
     with tf.variable_scope(name):
