@@ -6,12 +6,6 @@ python train.py [-h] (--basic | --nf | --iaf) [--flow FLOW]
 python train.py --basic
 python train.py --nf --flow 10
 ```
-<<<<<<< HEAD
-=======
-or substitute another script name in. Also see the notebook for usage.
->>>>>>> refactored
-
-This is a massive refactoring of the original VAE code.
 
 All the models (IAF, NF, VAE etc) are in models.py. 
 
