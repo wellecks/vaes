@@ -202,7 +202,7 @@ def train(
             print "Annealing learning rate to {}".format(learning_rate)
             number_of_validation_failures = 0
 
-        samples = sess.run([out_op], feed_dict={x: visualized, x_w: whiten(visualized), e: e_visualized, is_training: False})
+        samples = sess.run([out_op], feed_dict={x: visualized, x_w: visualized, e: e_visualized, is_training: False})
         samples = np.reshape(samples, (n_view, image_width, image_width))
         samples_list.append(samples)
         #show_samples(samples, image_width
