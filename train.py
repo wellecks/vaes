@@ -311,7 +311,7 @@ if __name__ == '__main__':
     group.add_argument('--hf', action='store_true')
     group.add_argument('--liaf', action='store_true')
 
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--anneal-lr', action='store_true')
     parser.add_argument('--flow', type=int, default=1)
 
@@ -406,7 +406,7 @@ if __name__ == '__main__':
 
     results_dir='results',
     results_file=results_file,
-    max_epochs=200,
+    max_epochs=args.epochs,
     saved_variables=saved_variables,
 
     **extra_settings
