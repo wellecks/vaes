@@ -419,7 +419,7 @@ if __name__ == '__main__':
 
     results_dir='results',
     results_file=results_file,
-    max_epochs=2000,
+    max_epochs=args.epochs,
     saved_variables=saved_variables,
 
     **extra_settings
