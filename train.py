@@ -402,7 +402,7 @@ if __name__ == '__main__':
 
     results_dir='results',
     results_file=results_file,
-    max_epochs=2,
+    max_epochs=200,
     saved_variables=saved_variables,
 
     **extra_settings
