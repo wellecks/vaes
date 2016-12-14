@@ -5,7 +5,6 @@ References
 https://arxiv.org/pdf/1312.6114v10.pdf
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import argparse
@@ -15,12 +14,12 @@ import inspect
 import os
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.python import control_flow_ops
+import restore
 from models import *
 from reconstructions import *
 from loss import *
 from nn_utils import whiten
 from datasets import binarized_mnist
-import argparse
 
 def train(
         image_width,
@@ -42,6 +41,7 @@ def train(
         bn=False,
         **kwargs
         ):
+    saved_variables = kwargs.pop('saved_variables', None)
     anneal_lr = kwargs.pop('anneal_lr', False)
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
     on_epoch = tf.placeholder(tf.float32, name='on_epoch')
@@ -63,7 +63,6 @@ def train(
             setting = '{}: {}'.format(kw, val)
             f.write('{}\n'.format(setting))
             print(setting)
-
     # Make the neural neural_networks
     is_training = tf.placeholder(tf.bool)
     if bn:
@@ -79,10 +78,10 @@ def train(
 
     z_params, z = encoder(x_w, e)
     x_pred = decoder(z)
-
     kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
     monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
     train_loss, valid_loss = monitor_functions['train_loss'], monitor_functions['valid_loss']
+
     out_op = x_pred
 
     # Batch normalization stuff
@@ -116,6 +115,11 @@ def train(
     # Create a session
     sess = tf.InteractiveSession()
     sess.run(tf.initialize_all_variables())
+
+    # Use pre-trained weight values
+    if saved_variables is not None:
+        restore.set_variables(sess, saved_variables)
+
     summary_writer = tf.train.SummaryWriter(results_dir, sess.graph)
     samples_list = []
     batch_counter = 0
@@ -189,6 +193,84 @@ def train(
     sess.close()
 
 
+def train_simple(
+        dim_x,
+        dim_z,
+        encoder,
+        decoder,
+        training_dataset,
+        validation_dataset=None,
+        learning_rate=0.0001,
+        optimizer=tf.train.AdamOptimizer,
+        batch_size=100,
+        max_epochs=10,
+        **kwargs):
+    print_every = kwargs.pop('print_every', 10)
+    # Set random seeds
+    seed = kwargs.pop('seed', 0)
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
+
+    rec_err_fn = l2_loss if kwargs.pop('rec_err_type', '') == 'l2_loss' else cross_entropy
+    anneal_lr = kwargs.pop('anneal_lr', False)
+
+    # Build computation graph and operations
+    x = tf.placeholder(tf.float32, [None, dim_x], 'x')
+    e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
+    z_params, z = encoder(x, e)
+    x_pred = decoder(z)
+
+    kl_weighting = 1
+    loss_op = elbo_loss(x_pred, x, kl_weighting=kl_weighting, rec_err_fn=rec_err_fn, **z_params)
+    out_op = x_pred
+    lr = tf.Variable(learning_rate)
+    train_op = optimizer(lr).minimize(loss_op)
+
+    # Make training and validation sets
+    n_train_batches = max(training_dataset.num_examples / batch_size, 1)
+    n_valid_batches = validation_dataset.num_examples / batch_size if validation_dataset is not None else 0
+
+    # Create a session
+    sess = tf.InteractiveSession()
+    sess.run(tf.initialize_all_variables())
+    batch_counter = 0
+    best_validation_loss = 1e100
+    for epoch in range(max_epochs):
+        for _ in xrange(n_train_batches):
+            batch_counter += 1
+
+            x_ = training_dataset.next_batch(batch_size)
+            e_ = np.random.normal(0, 1, (x_.shape[0], dim_z))
+            feed_dict = {x: x_, e: e_}
+            _, l = sess.run([train_op, loss_op], feed_dict)
+
+        l_v = 0.0
+        if validation_dataset is not None:
+            for _ in range(n_valid_batches):
+                x_valid = validation_dataset.next_batch(batch_size)
+                e_valid = np.random.normal(0, 1, (batch_size, dim_z))
+                l_v_batched = sess.run(loss_op, feed_dict={x: x_valid, e: e_valid})
+                l_v += l_v_batched
+            l_v /= n_valid_batches
+
+            if l_v > best_validation_loss:
+                if anneal_lr:
+                    lr /= 2
+                    learning_rate /= 2
+                    print "Annealing learning rate to {}".format(learning_rate)
+            else: best_validation_loss = l_v
+
+        if (epoch + 1) % print_every == 0:
+            print('Epoch: {:d}\t Training loss: {:.2f}'.format(epoch+1, l))
+
+    ops = {
+        'z': z,
+        'out': out_op,
+        'x': x,
+        'e': e
+    }
+    return ops, sess
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
@@ -198,10 +280,21 @@ if __name__ == '__main__':
     group.add_argument('--hf', action='store_true')
     group.add_argument('--liaf', action='store_true')
 
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--anneal-lr', action='store_true')
     parser.add_argument('--flow', type=int, default=1)
+
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--pretrained-metagraph', default=None)
     args = parser.parse_args()
+
+    # Load pretrained variables (HACK)
+    if args.pretrained_metagraph is not None:
+        s = args.pretrained_metagraph
+        checkpoint_dir, metagraph_name = '/'.join(s.split('/')[:-1]), s.split('/')[-1]
+        saved_variables = restore.get_saved_variable_values(checkpoint_dir, metagraph_name)
+    else:
+        saved_variables = None
 
     # Set random seeds
     np.random.seed(args.seed)
@@ -217,7 +310,7 @@ if __name__ == '__main__':
     flow = args.flow
     bn = True
 
-    ### ENCODER
+    # ENCODER
     if args.basic:
         #encoder_type = basic_encoder(encoder_net, dim_z)
         encoder_type = basic_encoder
@@ -258,7 +351,6 @@ if __name__ == '__main__':
         'anneal_lr': args.anneal_lr,
         'bn':bn,
         'enc_dims':enc_dims
-
     }
 
     #######################################
@@ -280,5 +372,7 @@ if __name__ == '__main__':
     results_dir='results',
     results_file=results_file,
     max_epochs=200,
+    saved_variables=saved_variables,
+
     **extra_settings
         )
