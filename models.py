@@ -2,12 +2,7 @@
 from neural_networks import *
 import numpy as np
 
-<<<<<<< HEAD
 def basic_encoder(neural_net, dim_z, *args):
-=======
-# ENCODERS
-def basic_encoder(neural_net, dim_z):
->>>>>>> 9662ea988c245aeae370f53a249fdf9c2dcbc231
     def _basic_encoder(x, e, neural_net, dim_z):
         output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
         last_hidden = neural_net(x)
@@ -19,7 +14,6 @@ def basic_encoder(neural_net, dim_z):
         return outputs, z
     return lambda x, e: _basic_encoder(x, e, neural_net, dim_z)
 
-<<<<<<< HEAD
 def nf_encoder(neural_net, dim_z, flow, use_c=True):
     def _nf_encoder(x, e, neural_net, dim_z, flow, use_c):
 
@@ -68,18 +62,13 @@ def nf_encoder(neural_net, dim_z, flow, use_c=True):
 
         #output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'us': dim_z * flow, 'ws': dim_z * flow, 'bs': dim_z * flow}
         output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
-=======
-def nf_encoder(neural_net, dim_z, flow):
-    def _nf_encoder(x, e, neural_net, dim_z, flow):
-        output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
 
->>>>>>> 9662ea988c245aeae370f53a249fdf9c2dcbc231
         last_hidden = neural_net(x)
         outputs = {}
         for key in ['mu', 'log_std']:
             outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
 
-<<<<<<< HEAD
+
         #mu, log_std, us, ws, bs = outputs['mu'], outputs['log_std'], outputs['us'], outputs['ws'], outputs['bs']
         mu, log_std = outputs['mu'], outputs['log_std']
 
@@ -87,11 +76,6 @@ def nf_encoder(neural_net, dim_z, flow):
 
         #zk, sum_log_detj = norm_flow(z0, us, ws, bs)
         zk, sum_log_detj = nf(z0, last_hidden, use_c, flow_length=flow)
-=======
-        mu, log_std = outputs['mu'], outputs['log_std']
-        z0 = mu + tf.exp(log_std) * e  # preflow
-        zk, sum_log_detj = nf(z0, flow, dim_z)
->>>>>>> 9662ea988c245aeae370f53a249fdf9c2dcbc231
 
         outputs['sum_log_detj'] = sum_log_detj
         outputs['z0'] = z0
@@ -99,19 +83,8 @@ def nf_encoder(neural_net, dim_z, flow):
 
         return outputs, zk
 
-<<<<<<< HEAD
-    return lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow, use_c)
-=======
-    def nf(z0, K, dim_z):
-        z = z0
-        ldjs = 0.0
-        for k in range(K):
-            z, log_detj = nf_layer(z, dim_z, 'nf_%d' % k)
-            ldjs += log_detj
-        return z, ldjs
 
-    return lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow)
->>>>>>> 9662ea988c245aeae370f53a249fdf9c2dcbc231
+    return lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow, use_c)
 
 def iaf_encoder(neural_net, dim_z, flow):
     def _iaf_encoder(x, e, neural_net, dim_z, flow):
