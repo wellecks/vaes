@@ -43,6 +43,7 @@ def train(
         ):
     saved_variables = kwargs.pop('saved_variables', None)
     anneal_lr = kwargs.pop('anneal_lr', False)
+    learning_rate_temperature = kwargs.pop('learning_rate_temperature', None)
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
     on_epoch = tf.placeholder(tf.float32, name='on_epoch')
     dt = datetime.datetime.now()
@@ -190,6 +191,7 @@ def train(
         examples_per_sec = (n_valid_batches + n_train_batches) * batch_size * 1.0 / duration
         print('Epoch: {:d}\t Weighted training loss: {:.2f}, Validation loss {:.2f} ({:.1f} examples/sec, {:.1f} sec/epoch)'.format(epoch, l, l_v, examples_per_sec, duration))
 
+        '''
         if l_v > best_validation_loss:
             number_of_validation_failures += 1
         else:
@@ -201,11 +203,21 @@ def train(
             learning_rate /= 2
             print "Annealing learning rate to {}".format(learning_rate)
             number_of_validation_failures = 0
-
+        '''
         samples = sess.run([out_op], feed_dict={x: visualized, x_w: visualized, e: e_visualized, is_training: False})
         samples = np.reshape(samples, (n_view, image_width, image_width))
         samples_list.append(samples)
         #show_samples(samples, image_width
+        lr = lr / (1.0 + epoch * 1.0 / learning_rate_temperature) if learning_rate_temperature is not None else lr
+        if epoch % 100 == 0:
+            np.save(results_dir + '/validation_losses_{}.npy'.format(epoch), validation_losses)
+            np.save(results_dir + '/training_losses_{}.npy'.format(epoch), training_losses)
+            np.save(results_dir + '/sample_visualizations_{}.npy'.format(epoch), np.array(samples_list))
+            np.save(results_dir + '/real_visualizations_{}.npy'.format(epoch), np.reshape(visualized, (n_view,image_width, image_width)))
+            for name in monitor_function_names:
+                np.save(results_dir + '/{}_valid_{}.npy'.format(name, epoch), monitor_output_valid[name])
+                np.save(results_dir + '/{}_train_{}.npy'.format(name, epoch), monitor_output_train[name])
+
 
     np.save(results_dir + '/validation_losses.npy', validation_losses)
     np.save(results_dir + '/training_losses.npy', training_losses)
@@ -311,10 +323,10 @@ if __name__ == '__main__':
     group.add_argument('--hf', action='store_true')
     group.add_argument('--liaf', action='store_true')
 
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=2000)
     parser.add_argument('--anneal-lr', action='store_true')
     parser.add_argument('--flow', type=int, default=1)
-
+    parser.add_argument('--lrt', type=int, default=100)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--pretrained-metagraph', default=None)
     args = parser.parse_args()
@@ -364,7 +376,7 @@ if __name__ == '__main__':
 
     if args.pretrained_metagraph is not None:
         results_file += '_pretrained'
-        
+
     ### DECODER
     decoder = basic_decoder(decoder_net, dim_x)
 
@@ -385,7 +397,8 @@ if __name__ == '__main__':
         'kl annealing rate':kl_annealing_rate,
         'anneal_lr': args.anneal_lr,
         'bn':bn,
-        'enc_dims':enc_dims
+        'enc_dims':enc_dims,
+        'learning_rate_temperature':args.lrt
     }
 
     #######################################
@@ -406,7 +419,7 @@ if __name__ == '__main__':
 
     results_dir='results',
     results_file=results_file,
-    max_epochs=200,
+    max_epochs=2000,
     saved_variables=saved_variables,
 
     **extra_settings
