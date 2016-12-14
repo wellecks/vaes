@@ -5,7 +5,6 @@ References
 https://arxiv.org/pdf/1312.6114v10.pdf
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 import argparse
@@ -13,12 +12,12 @@ import time
 import datetime
 import inspect
 import os
-from tensorflow.examples.tutorials.mnist import input_data
+
+import restore
 from models import *
 from reconstructions import *
 from loss import *
 from datasets import binarized_mnist
-import argparse
 
 def train(
         image_width,
@@ -36,6 +35,7 @@ def train(
         n_view=10,
         **kwargs
         ):
+    saved_variables = kwargs.pop('saved_variables', None)
     anneal_lr = kwargs.pop('anneal_lr', False)
     global_step = tf.Variable(0, trainable=False) # for checkpoint saving
     on_epoch = tf.placeholder(tf.float32, name='on_epoch')
@@ -55,7 +55,6 @@ def train(
             setting = '{}: {}'.format(kw, val)
             f.write('{}\n'.format(setting))
             print(setting)
-
     # Build computation graph and operations
     x = tf.placeholder(tf.float32, [None, dim_x], 'x')
     e = tf.placeholder(tf.float32, (None, dim_z), 'noise')
@@ -90,6 +89,11 @@ def train(
     # Create a session
     sess = tf.InteractiveSession()
     sess.run(tf.initialize_all_variables())
+
+    # Use pre-trained weight values
+    if saved_variables is not None:
+        restore.set_variables(sess, saved_variables)
+
     summary_writer = tf.train.SummaryWriter(results_dir, sess.graph)
     samples_list = []
     batch_counter = 0
@@ -144,9 +148,9 @@ def train(
         samples_list.append(samples)
         #show_samples(samples, image_width)
 
-    for samples in samples_list:
-        together = np.hstack((np.reshape(visualized, (n_view,image_width, image_width)), samples > 0.5))
-        plot_images_together(together)
+    # for samples in samples_list:
+    #     together = np.hstack((np.reshape(visualized, (n_view,image_width, image_width)), samples > 0.5))
+    #     plot_images_together(together)
 
     sess.close()
 
@@ -237,10 +241,21 @@ if __name__ == '__main__':
     group.add_argument('--iaf', action='store_true')
     group.add_argument('--hf', action='store_true')
 
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--anneal-lr', action='store_true')
     parser.add_argument('--flow', type=int, default=1)
+
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--pretrained-metagraph', default=None)
     args = parser.parse_args()
+
+    # Load pretrained variables (HACK)
+    if args.pretrained_metagraph is not None:
+        s = args.pretrained_metagraph
+        checkpoint_dir, metagraph_name = '/'.join(s.split('/')[:-1]), s.split('/')[-1]
+        saved_variables = restore.get_saved_variable_values(checkpoint_dir, metagraph_name)
+    else:
+        saved_variables = None
 
     # Set random seeds
     np.random.seed(args.seed)
@@ -278,18 +293,18 @@ if __name__ == '__main__':
     ## TRAINING
     #######################################
     train(
-    image_width=28,
-    dim_x=dim_x,
-    dim_z=dim_z,
-    encoder=encoder,
-    decoder=decoder,
-    dataset=binarized_mnist(),
-    learning_rate=0.001,
-    optimizer=tf.train.AdamOptimizer,
-    loss=elbo_loss,
-    batch_size=100,
-
-    results_dir='results',
-    max_epochs=100,
-    **extra_settings
-        )
+        image_width=28,
+        dim_x=dim_x,
+        dim_z=dim_z,
+        encoder=encoder,
+        decoder=decoder,
+        dataset=binarized_mnist(),
+        learning_rate=0.001,
+        optimizer=tf.train.AdamOptimizer,
+        loss=elbo_loss,
+        batch_size=100,
+        results_dir='results',
+        max_epochs=args.epochs,
+        saved_variables=saved_variables,
+        **extra_settings
+    )
