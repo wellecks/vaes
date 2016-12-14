@@ -361,6 +361,10 @@ if __name__ == '__main__':
     if args.liaf:
         encoder_type = linear_iaf_encoder
         results_file += '-linIAF'
+
+    if args.pretrained_metagraph is not None:
+        results_file += '_pretrained'
+        
     ### DECODER
     decoder = basic_decoder(decoder_net, dim_x)
 
