@@ -35,7 +35,7 @@ def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, **kwargs):
         sum_log_detj = tf.reduce_mean(sum_log_detj, name='sum_log_detj')
         log_q0_z0 = tf.reduce_mean(gaussian_log_pdf(mu, log_std, z0), name='log_q0_z0')
         log_qk_zk = log_q0_z0 - sum_log_detj
-        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.ones_like(mu), zk), name='log_p_zk')
+        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.zeros_like(mu), zk), name='log_p_zk')
         log_p_x_given_zk = -tf.reduce_mean(cross_entropy(pred, actual), name='log_p_x_given_zk')
         rec_err = -log_p_x_given_zk
         raw_kl = log_qk_zk - log_p_zk
@@ -51,13 +51,16 @@ def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, **kwargs):
     unweighted_elbo = raw_kl + rec_err
     weighted_elbo = weighted_kl + rec_err
 
+    train_loss = weighted_elbo
+    valid_loss = unweighted_elbo
+
     monitor_functions.update({
     'weighted_kl':weighted_kl,
     'unweighted_elbo':unweighted_elbo,
     'weighted_elbo':weighted_elbo,
     'raw_kl':raw_kl,
     'rec_err':rec_err,
+    'train_loss':train_loss,
+    'valid_loss':valid_loss
     })
-    train_loss = weighted_elbo
-    valid_loss = unweighted_elbo
-    return train_loss, valid_loss, monitor_functions
+    return monitor_functions

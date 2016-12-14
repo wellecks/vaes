@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 # Create some wrappers for simplicity
 def conv2d(x, W, b, strides=1):
     # Conv2D wrapper, with bias and relu activation
@@ -10,7 +11,7 @@ def maxpool2d(x, k=2):
     # MaxPool2D wrapper
     return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
                           padding='SAME')
-                          
+
 def dtanh(tensor):
     return 1.0 - tf.square(tf.tanh(tensor))
 
@@ -32,3 +33,9 @@ def variable_summaries(var):
       tf.scalar_summary('max', tf.reduce_max(var))
       tf.scalar_summary('min', tf.reduce_min(var))
       tf.histogram_summary('histogram', var)
+
+def whiten(data):
+    #import ipdb; ipdb.set_trace()
+    mean = np.mean(data, 0, keepdims=True)
+    std = np.std(data - mean, 0, keepdims=True)
+    return (data - mean) / (std + 1e-7)

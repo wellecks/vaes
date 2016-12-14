@@ -3,6 +3,7 @@ import numpy as np
 import os
 import urllib
 from tensorflow.contrib.learn.python.learn.datasets.mnist import DataSet
+from nn_utils import whiten
 
 DATASETS_DIR = 'data'
 DATASET_TYPES = ['train', 'valid', 'test']
@@ -41,13 +42,16 @@ class UnlabelledDataSet(object):
                  images):
         self._num_examples = images.shape[0]
         self._images = images
+        self._whitened_images = whiten(images)
         self._epochs_completed = 0
         self._index_in_epoch = 0
 
     @property
     def images(self):
         return self._images
-
+    @property
+    def whitened_images(self):
+        return self._whitened_images
     @property
     def num_examples(self):
         return self._num_examples
@@ -56,7 +60,7 @@ class UnlabelledDataSet(object):
     def epochs_completed(self):
         return self._epochs_completed
 
-    def next_batch(self, batch_size):
+    def next_batch(self, batch_size, whitened=False):
         """Return the next `batch_size` examples from this data set."""
         start = self._index_in_epoch
         self._index_in_epoch += batch_size
@@ -72,4 +76,6 @@ class UnlabelledDataSet(object):
             self._index_in_epoch = batch_size
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
-        return self._images[start:end]
+        if whitened:
+            return self.images[start:end], self._whitened_images[start:end]
+        else: return self._images[start:end], self.images[start:end]

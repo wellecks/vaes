@@ -15,17 +15,34 @@ def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
           weights = weight_variable([input_dim, output_dim])
           #variable_summaries(weights)
       with tf.variable_scope('bias'):
-        biases = bias_variable([output_dim])
-        #variable_summaries(biases)
+          biases = bias_variable([output_dim])
+          #variable_summaries(biases)
       with tf.variable_scope('Wx_plus_b'):
-        preactivate = tf.matmul(input_tensor, weights) + biases
-        #tf.histogram_summary('pre_activations', preactivate)
+          preactivate = tf.matmul(input_tensor, weights) + biases
+          #tf.histogram_summary('pre_activations', preactivate)
       if act is not None:
           activations = act(preactivate, name='activation')
       else: activations = preactivate
       #tf.histogram_summary('activations', activations)
       return activations
+'''
+def batch_norm_layer(input_tensor, tf.placeholder(tf.bool), batch_size=None):
+    output_dim = input_tensor.get_shape()[-1].value
+    input_tensor_mean = tf.reduce_mean(input_tensor, 0, keep_dims=True)
+    input_tensor_var = tf.reduce_mean(tf.pow(input_tensor - input_tensor_mean, 2), 0, keep_dims=True)
+    if batch_size is not None:
+        input_tensor_var = input_tensor_var * batch_size / (batch_size - 1)
+    input_tensor_std = tf.sqrt(input_tensor_var)
 
+    input_tensor_normalized = (input_tensor - input_tensor_mean) / (input_tensor_std + 1e-7)
+
+    with tf.variable_scope('scale'):
+        scale = bias_variable([output_dim])
+    with tf.variable_scope('shift'):
+        shift = bias_variable([output_dim])
+    output = tf.mul(input_tensor_normalized, scale) + shift
+    return output
+'''
 def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
 
     def _get_made_masks(dim_in, dim_out):
@@ -61,14 +78,20 @@ def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
                 activations = preactivate
         return activations
 
-def nn(input_tensor, dims_hidden, name, act=tf.nn.relu):
+def nn(input_tensor, dims_hidden, name, act=tf.nn.relu, is_training=None):
     with tf.variable_scope(name):
         dim_out = dims_hidden[0]
-        h = fc_layer(input_tensor, dim_out, 'layer0', act)
+        h = fc_layer(input_tensor, dim_out, 'layer0', act=None)
+        if is_training is not None:
+            h = tf.contrib.layers.batch_norm(inputs=h, decay=0.99, epsilon=1e-7, is_training=is_training)
+        h = act(h)
         for i in range(len(dims_hidden) - 1):
             dim_in = dims_hidden[i]
             dim_out = dims_hidden[i+1]
-            h = fc_layer(h, dim_out, 'layer_{}'.format(i+1), act)
+            h = fc_layer(h, dim_out, 'layer_{}'.format(i+1), act=None)
+            if is_training is not None:
+                h = tf.contrib.layers.batch_norm(inputs=h, decay=0.99, epsilon=1e-7, is_training=is_training)
+            h = act(h)
         dim_in = dims_hidden[-1]
     return h
 

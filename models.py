@@ -5,7 +5,7 @@ import numpy as np
 import pdb
 ###### ENCODERS
 
-def basic_encoder(neural_net, dim_z):
+def basic_encoder(neural_net, dim_z, *args):
     def _basic_encoder(x, e, neural_net, dim_z):
         output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
         last_hidden = neural_net(x)
@@ -17,17 +17,17 @@ def basic_encoder(neural_net, dim_z):
         return outputs, z
     return lambda x, e: _basic_encoder(x, e, neural_net, dim_z)
 
-def nf_encoder(neural_net, dim_z, flow):
-    def _nf_encoder(x, e, neural_net, dim_z, flow):
+def nf_encoder(neural_net, dim_z, flow, use_c=True):
+    def _nf_encoder(x, e, neural_net, dim_z, flow, use_c):
 
         def norm_flow_one_step(z, u, w, b):
-            temp = tf.expand_dims(tf.nn.tanh(tf.reduce_sum(w * z, 1) + b), 1)
+            temp = tf.nn.tanh(tf.reduce_sum(w * z, 1, keep_dims=True) + b)
             z = z + tf.mul(u, temp)
 
             # Eqn. (11) and (12)
-            temp = tf.expand_dims(dtanh(tf.reduce_sum(w * z, 1) + b), 1)
+            temp = dtanh(tf.reduce_sum(w * z, 1, keep_dims=True) + b)
             psi = temp * w
-            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1)))    
+            log_detj = tf.log(tf.abs(1. + tf.reduce_sum(tf.mul(u, psi), 1)))
             return z, log_detj
 
         def norm_flow(z, us, ws, bs):
@@ -40,24 +40,50 @@ def nf_encoder(neural_net, dim_z, flow):
                 sum_log_detj += log_detj
             return z, sum_log_detj
 
-        output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'us': dim_z * flow, 'ws': dim_z * flow, 'bs': dim_z * flow}
+        def get_norm_flow_params(c, use_c):
+            #shape = z.get_shape()[0].value
+            #v = tf.get_variable('constant_term', shape, initializer=tf.constant_initializer(0.0), trainable=False)
+            v = tf.ones_like(c)
+            if use_c:
+                v = tf.concat(1, (v, c))
+
+            u = fc_layer(v, dim_z, layer_name='u', act=None)
+            w = fc_layer(v, dim_z, layer_name='w', act=None)
+            b = fc_layer(v, 1, layer_name='b', act=None)
+            return u, w, b
+
+        def nf(z, c, use_c, flow_length):
+            z = z0
+            sum_log_detj = 0.0
+            for i in range(flow_length):
+                with tf.variable_scope('flow_{}'.format(i)):
+                    u, w, b = get_norm_flow_params(c, use_c)
+                    z, log_detj = norm_flow_one_step(z, u, w, b)
+                    sum_log_detj += log_detj
+
+            return z, sum_log_detj
+
+        #output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'us': dim_z * flow, 'ws': dim_z * flow, 'bs': dim_z * flow}
+        output_dims_dict = {'mu': dim_z, 'log_std': dim_z}
         last_hidden = neural_net(x)
         outputs = {}
         for key in output_dims_dict:
             outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
 
-        mu, log_std, us, ws, bs = outputs['mu'], outputs['log_std'], outputs['us'], outputs['ws'], outputs['bs']
+        #mu, log_std, us, ws, bs = outputs['mu'], outputs['log_std'], outputs['us'], outputs['ws'], outputs['bs']
+        mu, log_std = outputs['mu'], outputs['log_std']
 
         z0 = mu + tf.exp(log_std) * e
 
-        zk, sum_log_detj = norm_flow(z0, us, ws, bs)
+        #zk, sum_log_detj = norm_flow(z0, us, ws, bs)
+        zk, sum_log_detj = nf(z0, last_hidden, use_c, flow_length=flow)
 
         outputs['z0'] = z0 # this is z0, pre-flow
         outputs['zk'] = zk # this is zk, post-flow
         outputs['sum_log_detj'] = sum_log_detj
         return outputs, zk
 
-    return lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow)
+    return lambda x, e: _nf_encoder(x, e, neural_net, dim_z, flow, use_c)
 
 def iaf_encoder(neural_net, dim_z, flow):
     def _iaf_encoder(x, e, neural_net, dim_z, flow):
@@ -124,13 +150,38 @@ def hf_encoder(neural_net, dim_z, flow):
         return z, sum_log_detj
 
     def householder(z, v):
+        #batch_size, dim_z = z.get_shape().value
         norm_squared_v = tf.expand_dims(tf.reduce_sum(tf.pow(v, 2), 1, keep_dims=True), 1) # HACKHACKHACK
-        H = 1 - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v
+        identity = tf.expand_dims(tf.Variable(initial_value = np.identity(dim_z), dtype=tf.float32, trainable=False), 0)
+        H = identity - 2 * tf.mul(tf.expand_dims(v, 1), tf.expand_dims(v, 2)) / norm_squared_v
         return tf.reduce_sum(tf.mul(H, tf.expand_dims(z, 1)), 2)
 
     return lambda x, e: _hf_encoder(x, e, neural_net, dim_z, flow)
 
+def linear_iaf_encoder(neural_net, dim_z, *args):
+    def _linear_iaf_encoder(x, e, neural_net, dim_z):
+        output_dims_dict = {'mu': dim_z, 'log_std': dim_z, 'L':dim_z * dim_z}
+        last_hidden = neural_net(x)
+        outputs = {}
+        for key in output_dims_dict:
+            outputs[key] = fc_layer(last_hidden, output_dims_dict[key], layer_name=key, act=None)
+        mu, log_std, L = outputs['mu'], outputs['log_std'], outputs['L']
+        mask = tf.expand_dims(tf.constant(np.triu(np.zeros((dim_z, dim_z))), dtype=tf.float32), 0)
+        L = tf.reshape(L, (-1, dim_z, dim_z))
+        temp = mask * L
+        ones = tf.expand_dims(tf.constant(np.eye(dim_z), dtype=tf.float32), 0)
+        #import ipdb; ipdb.set_trace()
+        L = temp + ones
+        z0 = mu + tf.exp(log_std) * e
 
+        #import ipdb; ipdb.set_trace()
+        zk = tf.reduce_sum(tf.mul(L, tf.expand_dims(z0, 1)), 2)
+        import ipdb; ipdb.set_trace()
+        outputs['sum_log_detj'] = 0.0
+        outputs['z0'] = z0
+        outputs['zk'] = zk
+        return outputs, zk
+    return lambda x, e: _linear_iaf_encoder(x, e, neural_net, dim_z)
 ###### DECODERS
 def basic_decoder(neural_net, dim_x):
     def _basic_decoder(z, neural_net, dim_x):
