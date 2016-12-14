@@ -40,7 +40,7 @@ def elbo_loss(pred, actual, var_reg=1, kl_weighting=1, rec_err_fn=cross_entropy,
         log_q0_z0 = tf.reduce_mean(gaussian_log_pdf(mu, log_std, z0), name='log_q0_z0')
         log_qk_zk = log_q0_z0 - sum_log_detj
 
-        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.ones_like(mu), zk), name='log_p_zk')
+        log_p_zk = tf.reduce_mean(gaussian_log_pdf(tf.zeros_like(mu), tf.zeros_like(mu), zk), name='log_p_zk')
         log_p_x_given_zk = -tf.reduce_mean(rec_err_fn(pred, actual), name='log_p_x_given_zk')
         rec_err = -log_p_x_given_zk
         raw_kl = log_qk_zk - log_p_zk

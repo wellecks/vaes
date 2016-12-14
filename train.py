@@ -80,6 +80,12 @@ def train(
     x_pred = decoder(z)
     kl_weighting = 1.0 - tf.exp(-on_epoch / kl_annealing_rate) if kl_annealing_rate is not None else 1
     monitor_functions = loss(x_pred, x, kl_weighting=kl_weighting, **z_params)
+    monitor_functions_sorted = sorted(monitor_functions.iteritems(), key=lambda x: x[0])
+    monitor_output_train = {name: [] for name in monitor_functions.iterkeys()}
+    monitor_output_valid = {name: [] for name in monitor_functions.iterkeys()}
+    monitor_function_names = [p[0] for p in monitor_functions_sorted]
+    monitor_function_list = [p[1] for p in monitor_functions_sorted]
+
     train_loss, valid_loss = monitor_functions['train_loss'], monitor_functions['valid_loss']
 
     out_op = x_pred
@@ -131,12 +137,20 @@ def train(
         feed_dict[on_epoch] = epoch
         start_time = time.time()
         l_t = 0
+        monitor_output_epoch = {name:0 for name in monitor_function_names}
         for _ in xrange(n_train_batches):
             batch_counter += 1
             feed_dict[x], feed_dict[x_w] = training_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = True
-            _, l = sess.run([train_op, train_loss], feed_dict=feed_dict)
+            output = sess.run([train_op, train_loss] + monitor_function_list, feed_dict=feed_dict)
+            l, monitor_output_batch = output[1], output[2:]
+
+            for name, out in zip(monitor_function_names, monitor_output_batch):
+                monitor_output_epoch[name] += out
+
+            # monitor_l = {monitor_fn_key: sess.run(monitor_fn, feed_dict=feed_dict) for monitor_fn, monitor_fn_key in monitor_functions.items()}
+
             if batch_counter % 100 == 0:
                 summary_str = sess.run(summary_op, feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, batch_counter)
@@ -147,16 +161,30 @@ def train(
                 saver.save(sess, checkpoint_path, global_step=global_step)
             l_t += l
         l_t /= n_train_batches
+        for name in monitor_function_names:
+            monitor_output_train[name].append(monitor_output_epoch[name] / n_train_batches)
+
         training_losses.append(l_t)
+
+        #################################
         l_v = 0
+        monitor_output_epoch = {name:0 for name in monitor_function_names}
+
         for _ in range(n_valid_batches):
 
             feed_dict[x], feed_dict[x_w] = validation_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = False
-            l_v_batched = sess.run(valid_loss, feed_dict=feed_dict)
+            output = sess.run([valid_loss] + monitor_function_list, feed_dict=feed_dict)
+            l_v_batched, monitor_output_batch = output[0], output[1:]
+            for name, out in zip(monitor_function_names, monitor_output_batch):
+                monitor_output_epoch[name] += out
             l_v += l_v_batched
+
         l_v /= n_valid_batches
+        for name in monitor_function_names:
+            monitor_output_valid[name].append(monitor_output_epoch[name] / n_valid_batches)
+        #monitor_output_valid = {name: value /= n_valid_batches for name, value in monitor_output_valid}
         validation_losses.append(l_v)
         duration = time.time() - start_time
         examples_per_sec = (n_valid_batches + n_train_batches) * batch_size * 1.0 / duration
@@ -183,6 +211,9 @@ def train(
     np.save(results_dir + '/training_losses.npy', training_losses)
     np.save(results_dir + '/sample_visualizations.npy', np.array(samples_list))
     np.save(results_dir + '/real_visualizations.npy', np.reshape(visualized, (n_view,image_width, image_width)))
+    for name in monitor_function_names:
+        np.save(results_dir + '/{}_valid.npy'.format(name), monitor_output_valid[name])
+        np.save(results_dir + '/{}_train.npy'.format(name), monitor_output_train[name])
 
     visualize = False
     if visualize:
@@ -371,7 +402,7 @@ if __name__ == '__main__':
 
     results_dir='results',
     results_file=results_file,
-    max_epochs=200,
+    max_epochs=2,
     saved_variables=saved_variables,
 
     **extra_settings
