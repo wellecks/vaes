@@ -1,30 +1,25 @@
+"""Reusable neural network layers"""
+
 import tensorflow as tf
 import numpy as np
 
 from nn_utils import *
 
 def fc_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
-    """Reusable code for making a simple neural net layer.
-    It does a matrix multiply, bias add, and then uses tanh to nonlinearize.
-    It also sets up name scoping so that the resultant graph is easy to read,
-    and adds a number of summary ops.
-    """
+    """Reusable code for making a simple neural net layer."""
     input_dim = input_tensor.get_shape()[-1].value
     with tf.variable_scope(layer_name):
-      with tf.variable_scope('weights'):
-          weights = weight_variable([input_dim, output_dim])
-          #variable_summaries(weights)
-      with tf.variable_scope('bias'):
-          biases = bias_variable([output_dim])
-          #variable_summaries(biases)
-      with tf.variable_scope('Wx_plus_b'):
-          preactivate = tf.matmul(input_tensor, weights) + biases
-          #tf.histogram_summary('pre_activations', preactivate)
-      if act is not None:
-          activations = act(preactivate, name='activation')
-      else: activations = preactivate
-      #tf.histogram_summary('activations', activations)
-      return activations
+        with tf.variable_scope('weights'):
+            weights = weight_variable([input_dim, output_dim])
+        with tf.variable_scope('bias'):
+            biases = bias_variable([output_dim])
+        with tf.variable_scope('Wx_plus_b'):
+            preactivate = tf.matmul(input_tensor, weights) + biases
+        if act is not None:
+            activations = act(preactivate, name='activation')
+        else:
+            activations = preactivate
+        return activations
 
 def made_layer(input_tensor, output_dim, layer_name, act=tf.nn.relu):
 
