@@ -13,7 +13,10 @@ import time
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import control_flow_ops
+try:
+    from tensorflow.python import control_flow_ops
+except ImportError:
+    from tensorflow.python.ops import control_flow_ops
 
 import restore
 from models import *
