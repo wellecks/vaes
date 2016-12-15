@@ -1,32 +1,30 @@
-"""Variational Auto-encoder
+"""Train various variational auto-encoder models.
 
 References
 ----------
 https://arxiv.org/pdf/1312.6114v10.pdf
 """
 
-import numpy as np
-import tensorflow as tf
 import argparse
-import time
 import datetime
 import inspect
 import os
-from tensorflow.examples.tutorials.mnist import input_data
+import time
+
+import numpy as np
+import tensorflow as tf
 from tensorflow.python import control_flow_ops
+
 import restore
 from models import *
 from reconstructions import *
 from loss import *
-from nn_utils import whiten
 from datasets import binarized_mnist
 
 def train(
         image_width,
         dim_x,
         dim_z,
-        #encoder_net,
-        #decoder_net,
         encoder_type,
         decoder,
         dataset,
@@ -64,12 +62,13 @@ def train(
             setting = '{}: {}'.format(kw, val)
             f.write('{}\n'.format(setting))
             print(setting)
+
     # Make the neural neural_networks
     is_training = tf.placeholder(tf.bool)
     if bn:
         encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh, is_training=is_training)
-    else: encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh, is_training=None)
-    #decoder_net = lambda z: nn(z, dec_dims, name='decoder', act=tf.nn.tanh)
+    else:
+        encoder_net = lambda x: nn(x, enc_dims, name='encoder', act=tf.nn.tanh, is_training=None)
     encoder = encoder_type(encoder_net, dim_z, flow)
 
     # Build computation graph and operations
@@ -101,7 +100,8 @@ def train(
     lr = tf.Variable(learning_rate)
     optimizer = optimizer(lr)
     gvs = optimizer.compute_gradients(train_loss)
-    capped_gvs = [(tf.clip_by_norm(grad, 1), var) if grad is not None else (grad, var) for grad, var in gvs]
+    capped_gvs = [(tf.clip_by_norm(grad, 1), var) if grad is not None else (grad, var)
+                  for grad, var in gvs]
     train_op = optimizer.apply_gradients(capped_gvs)
 
     # Make training and validation sets
@@ -138,7 +138,7 @@ def train(
         feed_dict[on_epoch] = epoch
         start_time = time.time()
         l_t = 0
-        monitor_output_epoch = {name:0 for name in monitor_function_names}
+        monitor_output_epoch = {name: 0 for name in monitor_function_names}
         for _ in xrange(n_train_batches):
             batch_counter += 1
             feed_dict[x], feed_dict[x_w] = training_data.next_batch(batch_size, whitened=False)
@@ -150,8 +150,6 @@ def train(
             for name, out in zip(monitor_function_names, monitor_output_batch):
                 monitor_output_epoch[name] += out
 
-            # monitor_l = {monitor_fn_key: sess.run(monitor_fn, feed_dict=feed_dict) for monitor_fn, monitor_fn_key in monitor_functions.items()}
-
             if batch_counter % 100 == 0:
                 summary_str = sess.run(summary_op, feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, batch_counter)
@@ -162,17 +160,16 @@ def train(
                 saver.save(sess, checkpoint_path, global_step=global_step)
             l_t += l
         l_t /= n_train_batches
+
         for name in monitor_function_names:
             monitor_output_train[name].append(monitor_output_epoch[name] / n_train_batches)
 
         training_losses.append(l_t)
 
-        #################################
+        # Validation loop
         l_v = 0
-        monitor_output_epoch = {name:0 for name in monitor_function_names}
-
+        monitor_output_epoch = {name: 0 for name in monitor_function_names}
         for _ in range(n_valid_batches):
-
             feed_dict[x], feed_dict[x_w] = validation_data.next_batch(batch_size, whitened=False)
             feed_dict[e] = np.random.normal(0, 1, (batch_size, dim_z))
             feed_dict[is_training] = False
@@ -185,30 +182,20 @@ def train(
         l_v /= n_valid_batches
         for name in monitor_function_names:
             monitor_output_valid[name].append(monitor_output_epoch[name] / n_valid_batches)
-        #monitor_output_valid = {name: value /= n_valid_batches for name, value in monitor_output_valid}
+
         validation_losses.append(l_v)
         duration = time.time() - start_time
         examples_per_sec = (n_valid_batches + n_train_batches) * batch_size * 1.0 / duration
         print('Epoch: {:d}\t Weighted training loss: {:.2f}, Validation loss {:.2f} ({:.1f} examples/sec, {:.1f} sec/epoch)'.format(epoch, l, l_v, examples_per_sec, duration))
 
-        '''
-        if l_v > best_validation_loss:
-            number_of_validation_failures += 1
-        else:
-            best_validation_loss = l_v
-            number_of_validation_failures = 0
-
-        if number_of_validation_failures == 5 and anneal_lr:
-            lr /= 2
-            learning_rate /= 2
-            print "Annealing learning rate to {}".format(learning_rate)
-            number_of_validation_failures = 0
-        '''
         samples = sess.run([out_op], feed_dict={x: visualized, x_w: visualized, e: e_visualized, is_training: False})
         samples = np.reshape(samples, (n_view, image_width, image_width))
         samples_list.append(samples)
-        #show_samples(samples, image_width
+        # show_samples(samples, image_width)
+
+        # Learning rate annealing
         lr = lr / (1.0 + epoch * 1.0 / learning_rate_temperature) if learning_rate_temperature is not None else lr
+
         if epoch % 100 == 0:
             np.save(results_dir + '/validation_losses_{}.npy'.format(epoch), validation_losses)
             np.save(results_dir + '/training_losses_{}.npy'.format(epoch), training_losses)
@@ -217,7 +204,6 @@ def train(
             for name in monitor_function_names:
                 np.save(results_dir + '/{}_valid_{}.npy'.format(name, epoch), monitor_output_valid[name])
                 np.save(results_dir + '/{}_train_{}.npy'.format(name, epoch), monitor_output_train[name])
-
 
     np.save(results_dir + '/validation_losses.npy', validation_losses)
     np.save(results_dir + '/training_losses.npy', training_losses)
@@ -331,7 +317,7 @@ if __name__ == '__main__':
     parser.add_argument('--pretrained-metagraph', default=None)
     args = parser.parse_args()
 
-    # Load pretrained variables (HACK)
+    # Load pretrained variables
     if args.pretrained_metagraph is not None:
         s = args.pretrained_metagraph
         checkpoint_dir, metagraph_name = '/'.join(s.split('/')[:-1]), s.split('/')[-1]
@@ -347,7 +333,7 @@ if __name__ == '__main__':
     dt = datetime.datetime.now()
     results_file = '/{}_{:02d}-{:02d}-{:02d}'.format(dt.date(), dt.hour, dt.minute, dt.second)
 
-    ### TRAINING SETTINGS
+    # TRAINING SETTINGS
     dim_x, dim_z, enc_dims, dec_dims = 784, 40, [300, 300], [300, 300]
     decoder_net = lambda z: nn(z, dec_dims, name='decoder', act=tf.nn.tanh)
     flow = args.flow
@@ -355,19 +341,15 @@ if __name__ == '__main__':
 
     # ENCODER
     if args.basic:
-        #encoder_type = basic_encoder(encoder_net, dim_z)
         encoder_type = basic_encoder
         results_file += '-basic'
     if args.nf:
-        #encoder_type = nf_encoder(encoder_net, dim_z, flow)
         encoder_type = nf_encoder
         results_file += '-NF-{}'.format(flow)
     if args.iaf:
-        #encoder_type = iaf_encoder(encoder_net, dim_z, flow)
         encoder_type = iaf_encoder
         results_file += '-IAF-{}'.format(flow)
     if args.hf:
-        #encoder_type = hf_encoder(encoder_net, dim_z, flow)
         encoder_type = hf_encoder
         results_file += '-HF-{}'.format(flow)
     if args.liaf:
@@ -377,50 +359,33 @@ if __name__ == '__main__':
     if args.pretrained_metagraph is not None:
         results_file += '_pretrained'
 
-    ### DECODER
     decoder = basic_decoder(decoder_net, dim_x)
 
-    ##############
-
-    #kl_annealing_rate = 10
     kl_annealing_rate = None
-    ### ENCODER
-    #encoder, model_type = basic_encoder(encoder_net, dim_z), 'Vanilla VAE'
-    #encoder, model_type = nf_encoder(encoder_net, dim_z, flow), 'Normalizing Flow'
-    #encoder, model_type = hf_encoder(encoder_net, dim_z, flow), 'Householder Flow'
-    #encoder, model_type = iaf_encoder(encoder_net, dim_z, flow), 'Inverse Autoregressive Flow'
-
-
     extra_settings = {
-        # 'model_type':model_type,
         'flow': flow,
-        'kl annealing rate':kl_annealing_rate,
+        'kl annealing rate': kl_annealing_rate,
         'anneal_lr': args.anneal_lr,
-        'bn':bn,
-        'enc_dims':enc_dims,
-        'learning_rate_temperature':args.lrt
+        'bn': bn,
+        'enc_dims': enc_dims,
+        'learning_rate_temperature': args.lrt
     }
 
-    #######################################
-    ## TRAINING
-    #######################################
+    # TRAINING
     train(
-    image_width=28,
-    dim_x=dim_x,
-    dim_z=dim_z,
-    #decoder_net=decoder_net,
-    encoder_type=encoder_type,
-    decoder=decoder,
-    dataset=binarized_mnist(),
-    learning_rate=0.0002,
-    optimizer=tf.train.AdamOptimizer,
-    loss=elbo_loss,
-    batch_size=100,
-
-    results_dir='results',
-    results_file=results_file,
-    max_epochs=args.epochs,
-    saved_variables=saved_variables,
-
-    **extra_settings
-        )
+        image_width=28,
+        dim_x=dim_x,
+        dim_z=dim_z,
+        encoder_type=encoder_type,
+        decoder=decoder,
+        dataset=binarized_mnist(),
+        learning_rate=0.0002,
+        optimizer=tf.train.AdamOptimizer,
+        loss=elbo_loss,
+        batch_size=100,
+        results_dir='results',
+        results_file=results_file,
+        max_epochs=args.epochs,
+        saved_variables=saved_variables,
+        **extra_settings
+    )
