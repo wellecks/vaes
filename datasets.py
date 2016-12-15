@@ -4,36 +4,35 @@ import numpy as np
 
 from nn_utils import whiten
 
-DATASETS_DIR = 'data'
-DATASET_TYPES = ['train', 'valid', 'test']
 
-
-def create_binarized_mnist(tpe):
+def create_binarized_mnist(tpe, dataset_dir='data'):
     print('Creating binarized %s dataset' % tpe)
-    file_path = DATASETS_DIR + '/binarized_mnist_{}.amat'.format(tpe)
+    file_path = os.path.join(dataset_dir, 'binarized_mnist_{}.amat'.format(tpe))
 
     # Download dataset if necessary
     if not os.path.isfile(file_path):
-        if not os.path.exists(DATASETS_DIR):
-            os.makedirs(DATASETS_DIR)
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
         url = 'http://www.cs.toronto.edu/~larocheh/public/datasets/binarized_mnist/binarized_mnist_{}.amat'.format(tpe)
         urllib.urlretrieve(url, file_path)
         print('Downloaded %s to %s' % (url, file_path))
+
     with open(file_path) as f:
         data = [l.strip().split(' ') for l in f.readlines()]
         data = np.array(data).astype(int)
-        np.save(DATASETS_DIR + '/binarized_mnist_{}.npy'.format(tpe), data)
+        np.save(os.path.join(dataset_dir, 'binarized_mnist_{}.npy'.format(tpe)), data)
     return data
 
 
-def binarized_mnist():
+def binarized_mnist(dataset_dir='data'):
     # Download and create datasets if necessary
-    for tpe in DATASET_TYPES:
-        if not os.path.isfile(os.path.join(DATASETS_DIR, 'binarized_mnist_{}.npy'.format(tpe))):
+    tpes = ['train', 'valid', 'test']
+    for tpe in tpes:
+        if not os.path.isfile(os.path.join(dataset_dir, 'binarized_mnist_{}.npy'.format(tpe))):
             create_binarized_mnist(tpe)
-    dataset = {tpe: UnlabelledDataSet(np.load(DATASETS_DIR + '/binarized_mnist_{}.npy'.format(tpe)))
-               for tpe in DATASET_TYPES}
-    return dataset
+
+    return {tpe: UnlabelledDataSet(np.load(os.path.join(dataset_dir, 'binarized_mnist_{}.npy'.format(tpe))))
+            for tpe in tpes}
 
 
 class UnlabelledDataSet(object):
