@@ -1,6 +1,6 @@
 To train:
 ```bash
-python train.py [-h] (--basic | --nf | --iaf) [--flow FLOW]
+python train.py [-h] (--basic | --nf | --iaf | --hf | --liaf) [--flow FLOW]
 
 # E.g.
 python train.py --basic
